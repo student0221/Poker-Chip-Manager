@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getStatus, getPlayers, deletePlayer, getSettleProgress } from '../api';
+import { getStatus, getPlayers, deletePlayer, getSettleProgress, adminAddPlayer } from '../api';
 
 function StatusBadge({ status }) {
   const configs = {
@@ -59,6 +59,8 @@ export default function AdminPage() {
   const [rateCommitted, setRateCommitted] = useState('');
   const [rankings, setRankings] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [addForm, setAddForm] = useState({ nickname: '', initial_chips: '' });
+  const [addMsg, setAddMsg] = useState('');
   const [manualFinal, setManualFinal] = useState({});
   const [message, setMessage] = useState('');
 
@@ -131,6 +133,22 @@ export default function AdminPage() {
     if (!confirm('确定删除该玩家？')) return;
     await deletePlayer(id);
     refresh();
+  };
+
+  const handleAddPlayer = async (e) => {
+    e.preventDefault();
+    try {
+      await adminAddPlayer({
+        name: addForm.nickname,
+        nickname: addForm.nickname,
+        initial_chips: parseInt(addForm.initial_chips)
+      });
+      setAddMsg('✅ 添加成功');
+      setAddForm({ nickname: '', initial_chips: '' });
+      refresh();
+    } catch (err) {
+      setAddMsg('❌ ' + err.message);
+    }
   };
 
   const handleManualFinal = async (id) => {
@@ -215,6 +233,43 @@ export default function AdminPage() {
             </div>
           </div>
         </Card>
+
+        {/* Add Player — pending / running */}
+        {(status.status === 'pending' || status.status === 'running') && (
+          <Card className="p-6 mb-6">
+            <h2 className="text-lg font-bold text-slate-700 mb-4">➕ 添加玩家</h2>
+            <form onSubmit={handleAddPlayer} className="flex items-end gap-3 flex-wrap">
+              <div className="flex-1 min-w-[140px]">
+                <label className="block text-sm font-medium text-slate-600 mb-1">昵称</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="玩家昵称"
+                  value={addForm.nickname}
+                  onChange={e => setAddForm({...addForm, nickname: e.target.value})}
+                  required
+                />
+              </div>
+              <div className="w-32">
+                <label className="block text-sm font-medium text-slate-600 mb-1">入场筹码</label>
+                <input
+                  type="number"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="0"
+                  value={addForm.initial_chips}
+                  onChange={e => setAddForm({...addForm, initial_chips: e.target.value})}
+                  required
+                />
+              </div>
+              <Button variant="success" type="submit" className="mb-0">添加</Button>
+            </form>
+            {addMsg && (
+              <div className={`text-sm mt-3 p-3 rounded-lg ${addMsg.includes('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                {addMsg}
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Players List */}
         <Card className="mb-6">

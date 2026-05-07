@@ -13,7 +13,8 @@ router.get('/players', (req, res) => {
   });
 });
 
-router.post('/players', (req, res) => {
+// 玩家自助报名（仅 running 状态，设备绑定防重）
+router.post('/players/join', (req, res) => {
   getSettings((err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!settings || settings.status !== 'running') {
@@ -25,12 +26,10 @@ router.post('/players', (req, res) => {
       return res.status(400).json({ error: 'Invalid player data' });
     }
 
-    // 姓名可选，不传的话用昵称代替
     const realName = name && name.trim() ? name.trim() : nickname;
 
-    // 同一设备已报名则禁止重复入场
     if (device_id) {
-      const existing = db.get('SELECT id FROM players WHERE device_id = ? AND left_at IS NULL', [device_id], (err, row) => {
+      db.get('SELECT id FROM players WHERE device_id = ? AND left_at IS NULL', [device_id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (row) {
           return res.status(409).json({ error: '该设备已报名，请勿重复入场' });
@@ -60,6 +59,27 @@ router.post('/players', (req, res) => {
       );
     }
   });
+});
+
+// 管理员直接添加玩家（pending / running 均可，不检查 device_id）
+router.post('/players/admin-add', (req, res) => {
+  const { name, nickname, initial_chips } = req.body;
+  if (!nickname || initial_chips === undefined || initial_chips < 0) {
+    return res.status(400).json({ error: 'Invalid player data' });
+  }
+
+  const realName = name && name.trim() ? name.trim() : nickname;
+
+  db.run(
+    'INSERT INTO players (name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?)',
+    [realName, nickname, initial_chips, null],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      db.get('SELECT * FROM players WHERE id=?', [this.lastID], (err, row) => {
+        res.status(201).json(row);
+      });
+    }
+  );
 });
 
 // 玩家中途离场（running 状态下提交剩余筹码并标记离场）

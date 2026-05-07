@@ -16,10 +16,20 @@ export async function getStatus() {
 }
 
 export async function submitPlayer(data) {
-  const res = await fetch(`${API_BASE}/api/players`, {
+  const res = await fetch(`${API_BASE}/api/players/join`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...data, device_id: getDeviceId() })
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function adminAddPlayer(data) {
+  const res = await fetch(`${API_BASE}/api/players/admin-add`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
