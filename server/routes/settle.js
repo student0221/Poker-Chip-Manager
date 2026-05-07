@@ -27,21 +27,21 @@ router.post('/players/:id/final', (req, res) => {
   });
 });
 
-// 玩家自己提交最终筹码（通过 name + nickname 匹配）
+// 玩家自己提交最终筹码（通过 nickname 匹配）
 router.post('/submit-final', (req, res) => {
-  const { name, nickname, final_chips } = req.body;
+  const { nickname, final_chips } = req.body;
   
-  if (!name || !nickname || final_chips === undefined) {
-    return res.status(400).json({ error: '请提供姓名、昵称和最终筹码' });
+  if (!nickname || final_chips === undefined) {
+    return res.status(400).json({ error: '请提供昵称和最终筹码' });
   }
 
   db.get('SELECT chip_rate FROM settings WHERE id=1', (err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
     
-    db.get('SELECT * FROM players WHERE name=? AND nickname=?', [name, nickname], (err, player) => {
+    db.get('SELECT * FROM players WHERE nickname=?', [nickname], (err, player) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!player) {
-        return res.status(404).json({ error: '未找到匹配的玩家，请检查姓名和昵称' });
+        return res.status(404).json({ error: '未找到匹配的玩家，请检查昵称' });
       }
       
       db.run('UPDATE players SET final_chips=? WHERE id=?', [final_chips, player.id], function(err) {

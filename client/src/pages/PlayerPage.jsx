@@ -71,8 +71,8 @@ function ProfitDisplay({ value }) {
 
 export default function PlayerPage() {
   const [status, setStatus] = useState(null);
-  const [joinForm, setJoinForm] = useState({ name: '', nickname: '', initial_chips: '' });
-  const [finalForm, setFinalForm] = useState({ name: '', nickname: '', final_chips: '' });
+  const [joinForm, setJoinForm] = useState({ nickname: '', initial_chips: '' });
+  const [finalForm, setFinalForm] = useState({ nickname: '', final_chips: '' });
   const [joinMsg, setJoinMsg] = useState('');
   const [finalMsg, setFinalMsg] = useState('');
   const [finalResult, setFinalResult] = useState(null);
@@ -111,8 +111,8 @@ export default function PlayerPage() {
         ...joinForm,
         initial_chips: parseInt(joinForm.initial_chips)
       });
-      setJoinMsg('✅ 报名成功！请牢记你的姓名和昵称，结算时需要用到');
-      setJoinForm({ name: '', nickname: '', initial_chips: '' });
+      setJoinMsg('报名成功！');
+      setJoinForm({ nickname: '', initial_chips: '' });
     } catch (err) {
       setJoinMsg('❌ ' + err.message);
     }
@@ -172,13 +172,6 @@ export default function PlayerPage() {
             </div>
             <form onSubmit={handleJoin} className="p-6 space-y-4">
               <Input
-                label="姓名"
-                placeholder="请输入真实姓名"
-                value={joinForm.name}
-                onChange={e => setJoinForm({...joinForm, name: e.target.value})}
-                required
-              />
-              <Input
                 label="昵称"
                 placeholder="请输入游戏昵称"
                 value={joinForm.nickname}
@@ -212,13 +205,6 @@ export default function PlayerPage() {
                 <p className="text-amber-100 text-sm mt-1">1筹码 = {status.chip_rate}元</p>
               </div>
               <form onSubmit={handleFinalSubmit} className="p-6 space-y-4">
-                <Input
-                  label="姓名"
-                  placeholder="报名时填写的姓名"
-                  value={finalForm.name}
-                  onChange={e => setFinalForm({...finalForm, name: e.target.value})}
-                  required
-                />
                 <Input
                   label="昵称"
                   placeholder="报名时填写的昵称"

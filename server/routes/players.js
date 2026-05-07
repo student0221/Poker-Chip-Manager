@@ -21,13 +21,16 @@ router.post('/players', (req, res) => {
     }
 
     const { name, nickname, initial_chips } = req.body;
-    if (!name || !nickname || initial_chips === undefined || initial_chips < 0) {
+    if (!nickname || initial_chips === undefined || initial_chips < 0) {
       return res.status(400).json({ error: 'Invalid player data' });
     }
 
+    // 姓名可选，不传的话用昵称代替
+    const realName = name && name.trim() ? name.trim() : nickname;
+
     db.run(
       'INSERT INTO players (name, nickname, initial_chips) VALUES (?, ?, ?)',
-      [name, nickname, initial_chips],
+      [realName, nickname, initial_chips],
       function(err) {
         if (err) return res.status(500).json({ error: err.message });
         db.get('SELECT * FROM players WHERE id=?', [this.lastID], (err, row) => {

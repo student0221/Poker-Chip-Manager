@@ -211,7 +211,7 @@ export default function AdminPage() {
                       </div>
                       <div>
                         <div className="font-medium text-slate-800">{p.nickname}</div>
-                        <div className="text-xs text-slate-500">{p.name} · 入场 {p.initial_chips} 筹码</div>
+                        <div className="text-xs text-slate-500">{p.name !== p.nickname ? p.name + ' · ' : ''}入场 {p.initial_chips} 筹码</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
