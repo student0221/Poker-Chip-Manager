@@ -15,8 +15,23 @@ export async function submitPlayer(data) {
   return res.json();
 }
 
+export async function submitFinal(data) {
+  const res = await fetch(`${API_BASE}/api/submit-final`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getPlayers() {
   const res = await fetch(`${API_BASE}/api/players`);
+  return res.json();
+}
+
+export async function getSettleProgress() {
+  const res = await fetch(`${API_BASE}/api/settle/progress`);
   return res.json();
 }
 

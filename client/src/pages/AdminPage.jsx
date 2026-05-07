@@ -1,19 +1,76 @@
 import { useState, useEffect } from 'react';
-import { getStatus, getPlayers, deletePlayer } from '../api';
-import StatusBadge from '../components/StatusBadge';
+import { getStatus, getPlayers, deletePlayer, getSettleProgress } from '../api';
+
+function StatusBadge({ status }) {
+  const configs = {
+    pending: { bg: 'bg-slate-500', text: 'text-white', label: '等待开始' },
+    running: { bg: 'bg-emerald-500', text: 'text-white', label: '进行中' },
+    settling: { bg: 'bg-amber-500', text: 'text-white', label: '结算中' },
+    completed: { bg: 'bg-blue-500', text: 'text-white', label: '已结束' }
+  };
+  const c = configs[status] || configs.pending;
+  return (
+    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${c.bg} ${c.text}`}>
+      <span className={`w-2 h-2 rounded-full mr-2 ${c.bg === 'bg-slate-500' ? 'bg-white/60' : 'bg-white'}`}></span>
+      {c.label}
+    </span>
+  );
+}
+
+function Card({ children, className = '' }) {
+  return (
+    <div className={`bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function Button({ children, variant = 'primary', className = '', ...props }) {
+  const variants = {
+    primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200',
+    success: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200',
+    warning: 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-200',
+    danger: 'bg-red-600 hover:bg-red-700 text-white shadow-red-200',
+    ghost: 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+  };
+  return (
+    <button
+      className={`px-4 py-2 rounded-xl font-semibold shadow-md transition-all active:scale-95 ${variants[variant]} ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ProfitDisplay({ value }) {
+  const isProfit = value >= 0;
+  return (
+    <span className={`font-bold ${isProfit ? 'text-emerald-600' : 'text-red-500'}`}>
+      {isProfit ? '+' : ''}{value.toFixed(2)}
+    </span>
+  );
+}
 
 export default function AdminPage() {
   const [status, setStatus] = useState(null);
   const [players, setPlayers] = useState([]);
   const [rate, setRate] = useState('');
   const [rankings, setRankings] = useState(null);
-  const [finalChips, setFinalChips] = useState({});
+  const [progress, setProgress] = useState(null);
+  const [manualFinal, setManualFinal] = useState({});
+  const [message, setMessage] = useState('');
 
   const refresh = async () => {
     const [s, p] = await Promise.all([getStatus(), getPlayers()]);
     setStatus(s);
     setPlayers(p);
     setRate(s.chip_rate);
+    
+    if (s.status === 'settling') {
+      const prog = await getSettleProgress();
+      setProgress(prog);
+    }
   };
 
   useEffect(() => {
@@ -33,159 +90,244 @@ export default function AdminPage() {
   };
 
   const handleRateUpdate = async () => {
+    const val = parseFloat(rate);
+    if (!val || val <= 0) {
+      setMessage('❌ 请输入有效的筹码比例（支持两位小数）');
+      return;
+    }
     await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chip_rate: parseFloat(rate) })
+      body: JSON.stringify({ chip_rate: val })
     });
+    setMessage('✅ 筹码比例已更新');
     refresh();
   };
 
   const handleDelete = async (id) => {
+    if (!confirm('确定删除该玩家？')) return;
     await deletePlayer(id);
     refresh();
   };
 
+  const handleManualFinal = async (id) => {
+    const chips = parseInt(manualFinal[id]);
+    if (isNaN(chips)) return;
+    await fetch(`/api/players/${id}/final`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ final_chips: chips })
+    });
+    setManualFinal({ ...manualFinal, [id]: '' });
+    refresh();
+  };
+
   const handleSettle = async () => {
-    const updates = players.map(p => ({
-      id: p.id,
-      final_chips: parseInt(finalChips[p.id] || 0)
-    }));
-    for (const u of updates) {
-      await fetch(`/api/players/${u.id}/final`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ final_chips: u.final_chips })
-      });
-    }
+    if (!confirm('确定执行清算？未提交的玩家将按 0 筹码计算。')) return;
     const res = await fetch('/api/settle', { method: 'POST' });
     const data = await res.json();
     setRankings(data.rankings);
     refresh();
   };
 
-  if (!status) return <div className="p-4">加载中...</div>;
+  if (!status) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50 flex items-center justify-center">
+        <div className="text-slate-400 text-lg">加载中...</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">比赛管理后台</h1>
-      
-      <div className="mb-4 flex items-center gap-3">
-        状态: <StatusBadge status={status.status} />
-      </div>
-
-      <div className="mb-4 space-y-2">
-        <div className="flex items-center gap-2">
-          <label>筹码比例:</label>
-          <input
-            type="number"
-            className="border p-1 rounded w-20"
-            value={rate}
-            onChange={e => setRate(e.target.value)}
-          />
-          <span>元/筹码</span>
-          <button onClick={handleRateUpdate} className="bg-gray-500 text-white px-2 py-1 rounded text-sm">
-            更新
-          </button>
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50">
+      <div className="max-w-3xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-extrabold text-slate-800 mb-2">🎰 比赛管理后台</h1>
+          <div className="mt-4">
+            <StatusBadge status={status.status} />
+          </div>
         </div>
 
-        {status.status === 'pending' && (
-          <button onClick={handleStart} className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
-            开始比赛
-          </button>
-        )}
-
-        {status.status === 'running' && (
-          <button onClick={handleEnd} className="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">
-            结束比赛
-          </button>
-        )}
-      </div>
-
-      <div className="mb-4">
-        <h2 className="text-lg font-bold mb-2">参与者 ({players.length})</h2>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b-2">
-              <th className="text-left">姓名</th>
-              <th className="text-left">昵称</th>
-              <th className="text-right">入场筹码</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {players.map(p => (
-              <tr key={p.id} className="border-b">
-                <td>{p.name}</td>
-                <td>{p.nickname}</td>
-                <td className="text-right">{p.initial_chips}</td>
-                <td className="text-right">
-                  <button 
-                    onClick={() => handleDelete(p.id)}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    删除
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {status.status === 'settling' && (
-        <div className="space-y-3">
-          <h3 className="font-bold">输入最终筹码</h3>
-          {players.map(p => (
-            <div key={p.id} className="flex items-center gap-2">
-              <span className="w-20">{p.nickname}</span>
+        {/* Controls */}
+        <Card className="p-6 mb-6">
+          <h2 className="text-lg font-bold text-slate-700 mb-4">⚙️ 比赛控制</h2>
+          
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="text-sm font-medium text-slate-600">筹码比例:</label>
               <input
                 type="number"
-                className="border p-1 rounded w-24"
-                placeholder="剩余筹码"
-                value={finalChips[p.id] || ''}
-                onChange={e => setFinalChips({...finalChips, [p.id]: e.target.value})}
+                step="0.01"
+                min="0.01"
+                className="w-28 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={rate}
+                onChange={e => setRate(e.target.value)}
               />
+              <span className="text-slate-500">元/筹码</span>
+              <Button variant="ghost" onClick={handleRateUpdate}>更新</Button>
             </div>
-          ))}
-          <button 
-            onClick={handleSettle}
-            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-          >
-            执行清算
-          </button>
-        </div>
-      )}
 
-      {rankings && (
-        <div className="mt-4">
-          <h2 className="text-lg font-bold mb-2">清算结果</h2>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b-2">
-                <th className="text-left">排名</th>
-                <th className="text-left">昵称</th>
-                <th className="text-right">入场</th>
-                <th className="text-right">剩余</th>
-                <th className="text-right">净盈亏</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rankings.map((p, i) => (
-                <tr key={p.id} className="border-b">
-                  <td>{i + 1}</td>
-                  <td>{p.nickname}</td>
-                  <td className="text-right">{p.initial_chips}</td>
-                  <td className="text-right">{p.final_chips}</td>
-                  <td className={`text-right ${p.net_profit >= 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    {p.net_profit >= 0 ? '+' : ''}{p.net_profit}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            {message && (
+              <div className="text-sm p-3 bg-blue-50 text-blue-700 rounded-lg">{message}</div>
+            )}
+
+            <div className="flex gap-3">
+              {status.status === 'pending' && (
+                <Button variant="success" onClick={handleStart} className="flex-1">
+                  🚀 开始比赛
+                </Button>
+              )}
+              {status.status === 'running' && (
+                <Button variant="warning" onClick={handleEnd} className="flex-1">
+                  ⏹️ 结束比赛
+                </Button>
+              )}
+              {status.status === 'settling' && (
+                <Button variant="primary" onClick={handleSettle} className="flex-1">
+                  💰 执行清算
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        {/* Players List */}
+        <Card className="mb-6">
+          <div className="p-6">
+            <h2 className="text-lg font-bold text-slate-700 mb-4">
+              👥 参与者 ({players.length})
+            </h2>
+            
+            {players.length === 0 ? (
+              <div className="text-center text-slate-400 py-8">暂无参与者</div>
+            ) : (
+              <div className="space-y-2">
+                {players.map(p => (
+                  <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
+                        {p.nickname.charAt(0)}
+                      </div>
+                      <div>
+                        <div className="font-medium text-slate-800">{p.nickname}</div>
+                        <div className="text-xs text-slate-500">{p.name} · 入场 {p.initial_chips} 筹码</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {p.final_chips !== null && (
+                        <span className="text-sm text-slate-500">剩余 {p.final_chips}</span>
+                      )}
+                      <button
+                        onClick={() => handleDelete(p.id)}
+                        className="text-red-400 hover:text-red-600 px-2"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Settling Progress */}
+        {status.status === 'settling' && progress && (
+          <Card className="mb-6">
+            <div className="p-6">
+              <h2 className="text-lg font-bold text-slate-700 mb-4">
+                📊 提交进度 ({progress.submitted_count}/{progress.total})
+              </h2>
+              
+              <div className="w-full bg-slate-100 rounded-full h-3 mb-4">
+                <div
+                  className="bg-blue-500 h-3 rounded-full transition-all"
+                  style={{ width: `${progress.total > 0 ? (progress.submitted_count / progress.total) * 100 : 0}%` }}
+                ></div>
+              </div>
+
+              {progress.pending.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  <h3 className="text-sm font-semibold text-slate-600">⚠️ 待提交（管理员可补录）</h3>
+                  {progress.pending.map(p => (
+                    <div key={p.id} className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl">
+                      <span className="font-medium text-amber-700">{p.nickname}</span>
+                      <input
+                        type="number"
+                        placeholder="补录筹码"
+                        className="flex-1 px-3 py-2 bg-white border border-amber-200 rounded-lg text-sm"
+                        value={manualFinal[p.id] || ''}
+                        onChange={e => setManualFinal({ ...manualFinal, [p.id]: e.target.value })}
+                      />
+                      <Button
+                        variant="warning"
+                        className="px-3 py-1 text-sm"
+                        onClick={() => handleManualFinal(p.id)}
+                      >
+                        补录
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {progress.submitted.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <h3 className="text-sm font-semibold text-slate-600">✅ 已提交</h3>
+                  {progress.submitted.map((p, i) => (
+                    <div key={p.id} className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg font-bold text-slate-400">#{i + 1}</span>
+                        <span className="font-medium">{p.nickname}</span>
+                      </div>
+                      <ProfitDisplay value={p.money_net} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {/* Rankings */}
+        {rankings && (
+          <Card>
+            <div className="p-6">
+              <h2 className="text-lg font-bold text-slate-700 mb-4">🏆 最终排名</h2>
+              <div className="space-y-2">
+                {rankings.map((p, i) => (
+                  <div
+                    key={p.id}
+                    className={`flex items-center gap-4 p-4 rounded-xl ${
+                      i === 0 ? 'bg-gradient-to-r from-yellow-50 to-amber-50 border border-amber-200' :
+                      i === 1 ? 'bg-gradient-to-r from-slate-50 to-gray-50 border border-gray-200' :
+                      i === 2 ? 'bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200' :
+                      'bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex-shrink-0 w-12 text-center">
+                      {i < 3 ? ['🥇', '🥈', '🥉'][i] : <span className="text-lg font-bold text-slate-400">{i + 1}</span>}
+                    </div>
+                    <div className="flex-grow">
+                      <div className="font-bold text-slate-800">{p.nickname}</div>
+                      <div className="text-xs text-slate-500">
+                        {p.initial_chips} → {p.final_chips} 筹码
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold">
+                        <ProfitDisplay value={p.net_profit} />
+                      </div>
+                      <div className="text-xs text-slate-400">元</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }
