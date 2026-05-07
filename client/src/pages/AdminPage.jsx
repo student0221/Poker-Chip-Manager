@@ -164,7 +164,7 @@ export default function AdminPage() {
                 value={rate}
                 onChange={e => setRate(e.target.value)}
               />
-              <span className="text-slate-500">元/筹码</span>
+              <span className="text-slate-500">元</span>
               <Button variant="ghost" onClick={handleRateUpdate}>更新</Button>
             </div>
 

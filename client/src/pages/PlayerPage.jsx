@@ -168,7 +168,7 @@ export default function PlayerPage() {
           <Card>
             <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white">
               <h2 className="text-xl font-bold">📝 报名参加比赛</h2>
-              <p className="text-blue-100 text-sm mt-1">筹码比例: {status.chip_rate} 元/筹码</p>
+              <p className="text-blue-100 text-sm mt-1">1筹码 = {status.chip_rate}元</p>
             </div>
             <form onSubmit={handleJoin} className="p-6 space-y-4">
               <Input
@@ -209,7 +209,7 @@ export default function PlayerPage() {
             <Card>
               <div className="p-6 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
                 <h2 className="text-xl font-bold">📊 提交最终筹码</h2>
-                <p className="text-amber-100 text-sm mt-1">筹码比例: {status.chip_rate} 元/筹码</p>
+                <p className="text-amber-100 text-sm mt-1">1筹码 = {status.chip_rate}元</p>
               </div>
               <form onSubmit={handleFinalSubmit} className="p-6 space-y-4">
                 <Input
@@ -270,7 +270,7 @@ export default function PlayerPage() {
                   </div>
                 </div>
                 <div className="mt-4 text-center text-sm text-slate-400">
-                  计算方式: ({finalResult.final_chips} - {finalResult.initial_chips}) × {finalResult.chip_rate} = {finalResult.money_net.toFixed(2)} 元
+                  筹码净值 {finalResult.chip_net} × 1筹码={finalResult.chip_rate}元 = {finalResult.money_net.toFixed(2)} 元
                 </div>
               </Card>
             )}
@@ -324,7 +324,7 @@ export default function PlayerPage() {
           <div className="space-y-6">
             <Card className="p-6 text-center bg-gradient-to-r from-blue-600 to-purple-600 text-white">
               <h2 className="text-2xl font-bold">🏆 比赛结果</h2>
-              <p className="text-blue-100 mt-1">筹码比例: {status.chip_rate} 元/筹码</p>
+              <p className="text-blue-100 mt-1">1筹码 = {status.chip_rate}元</p>
             </Card>
 
             <Card>
