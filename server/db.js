@@ -42,12 +42,30 @@ db.serialize(() => {
     if (err) return;
     const hasDeviceId = cols.some(c => c.name === 'device_id');
     const hasLeftAt = cols.some(c => c.name === 'left_at');
+    const hasDeletedAt = cols.some(c => c.name === 'deleted_at');
     if (!hasDeviceId) {
       db.run('ALTER TABLE players ADD COLUMN device_id TEXT');
     }
     if (!hasLeftAt) {
       db.run('ALTER TABLE players ADD COLUMN left_at INTEGER DEFAULT NULL');
     }
+    if (!hasDeletedAt) {
+      db.run('ALTER TABLE players ADD COLUMN deleted_at INTEGER DEFAULT NULL');
+    }
+    // 添加 nickname 唯一索引（如果无重复数据）
+    db.all("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_players_nickname'", (err, rows) => {
+      if (err || rows.length > 0) return;
+      db.all('SELECT nickname, COUNT(*) as cnt FROM players GROUP BY nickname HAVING cnt > 1', (err, dups) => {
+        if (err || (dups && dups.length > 0)) {
+          console.warn('[DB MIGRATION] 发现重复昵称，跳过 UNIQUE 索引添加:', dups ? dups.map(d => d.nickname) : 'unknown');
+          return;
+        }
+        db.run('CREATE UNIQUE INDEX idx_players_nickname ON players(nickname)', (err) => {
+          if (err) console.error('[DB MIGRATION] 创建唯一索引失败:', err);
+          else console.log('[DB MIGRATION] 已添加 nickname 唯一索引');
+        });
+      });
+    });
   });
 
   db.get('SELECT id FROM settings WHERE id = 1', (err, row) => {

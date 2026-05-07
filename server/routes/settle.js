@@ -2,13 +2,27 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'poker_admin_2026';
+
+function requireAdminSecret(req, res, next) {
+  const provided = req.headers['x-admin-secret'] || req.body.admin_secret;
+  if (provided !== ADMIN_SECRET) {
+    return res.status(403).json({ error: '鉴权失败，请提供正确的管理员密码' });
+  }
+  next();
+}
+
 // 管理员直接更新某个玩家的最终筹码
-router.post('/players/:id/final', (req, res) => {
+router.post('/players/:id/final', requireAdminSecret, (req, res) => {
   const { final_chips } = req.body;
   const id = req.params.id;
 
-  db.get('SELECT chip_rate FROM settings WHERE id=1', (err, settings) => {
+  db.get('SELECT chip_rate, status FROM settings WHERE id=1', (err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
+    if (!settings) return res.status(500).json({ error: '设置数据异常' });
+    if (settings.status !== 'settling') {
+      return res.status(409).json({ error: '当前状态不允许清算', currentStatus: settings.status });
+    }
     
     db.run('UPDATE players SET final_chips=? WHERE id=?', [final_chips, id], function(err) {
       if (err) return res.status(500).json({ error: err.message });
@@ -40,11 +54,15 @@ router.post('/submit-final', (req, res) => {
   db.get('SELECT chip_rate FROM settings WHERE id=1', (err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
     
-    db.get('SELECT * FROM players WHERE nickname=?', [nickname], (err, player) => {
+    db.all('SELECT * FROM players WHERE nickname=? AND deleted_at IS NULL', [nickname], (err, players) => {
       if (err) return res.status(500).json({ error: err.message });
-      if (!player) {
+      if (!players || players.length === 0) {
         return res.status(404).json({ error: '未找到匹配的玩家，请检查昵称' });
       }
+      if (players.length > 1) {
+        return res.status(409).json({ error: '该昵称对应多个玩家，请联系管理员处理' });
+      }
+      const player = players[0];
       if (device_id && player.device_id && player.device_id !== device_id) {
         return res.status(403).json({ error: '设备不匹配，无法代他人提交' });
       }
@@ -77,7 +95,7 @@ router.get('/settle/progress', (req, res) => {
   db.get('SELECT chip_rate FROM settings WHERE id=1', (err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
     
-    db.all('SELECT * FROM players ORDER BY created_at', (err, players) => {
+    db.all('SELECT * FROM players WHERE deleted_at IS NULL ORDER BY created_at', (err, players) => {
       if (err) return res.status(500).json({ error: err.message });
       
       const submitted = [];
@@ -112,17 +130,21 @@ router.get('/settle/progress', (req, res) => {
 
 // 执行清算
 router.post('/settle', (req, res) => {
-  db.get('SELECT chip_rate FROM settings WHERE id=1', (err, settings) => {
+  db.get('SELECT chip_rate, status FROM settings WHERE id=1', (err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
+    if (!settings) return res.status(500).json({ error: '设置数据异常' });
+    if (settings.status !== 'settling') {
+      return res.status(409).json({ error: '当前状态不允许清算', currentStatus: settings.status });
+    }
     
-    db.all('SELECT * FROM players', (err, players) => {
+    db.all('SELECT * FROM players WHERE deleted_at IS NULL', (err, players) => {
       if (err) return res.status(500).json({ error: err.message });
 
       let completed = 0;
       const total = players.length;
       
       if (total === 0) {
-        db.run("UPDATE settings SET status='completed' WHERE id=1", (err) => {
+        db.run("UPDATE settings SET status='completed', updated_at=? WHERE id=1 AND status='settling'", [Date.now()], (err) => {
           if (err) return res.status(500).json({ error: err.message });
           res.json({ rankings: [] });
         });
@@ -137,9 +159,9 @@ router.post('/settle', (req, res) => {
           if (err) return res.status(500).json({ error: err.message });
           completed++;
           if (completed === total) {
-            db.run("UPDATE settings SET status='completed' WHERE id=1", (err) => {
+            db.run("UPDATE settings SET status='completed', updated_at=? WHERE id=1 AND status='settling'", [Date.now()], (err) => {
               if (err) return res.status(500).json({ error: err.message });
-              db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit FROM players ORDER BY net_profit DESC', (err, rankings) => {
+              db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit FROM players WHERE deleted_at IS NULL ORDER BY net_profit DESC', (err, rankings) => {
                 const enriched = (rankings || []).map(r => ({
                   ...r,
                   total_settlement: r.initial_chips * settings.chip_rate
@@ -155,7 +177,7 @@ router.post('/settle', (req, res) => {
 });
 
 router.get('/rankings', (req, res) => {
-  db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit FROM players ORDER BY net_profit DESC', (err, rows) => {
+  db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit FROM players WHERE deleted_at IS NULL ORDER BY net_profit DESC', (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     db.get('SELECT chip_rate FROM settings WHERE id=1', (err, settings) => {
       if (err) return res.status(500).json({ error: err.message });

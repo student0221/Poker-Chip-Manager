@@ -66,7 +66,19 @@ export async function getSettleProgress() {
 }
 
 export async function deletePlayer(id) {
-  await fetch(`${API_BASE}/api/players/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/api/players/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function resetGame() {
+  const res = await fetch(`${API_BASE}/api/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: 'RESET_ALL_PLAYERS' })
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export async function getRankings() {

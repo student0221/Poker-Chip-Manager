@@ -1,73 +1,12 @@
 import { useState, useEffect } from 'react';
 import { getStatus, submitPlayer, submitFinal, getSettleProgress, getRankings, leavePlayer, getPlayers } from '../api';
-
-function StatusBadge({ status }) {
-  const configs = {
-    pending: { bg: 'bg-slate-500', text: 'text-white', label: '等待开始' },
-    running: { bg: 'bg-emerald-500', text: 'text-white', label: '进行中' },
-    settling: { bg: 'bg-amber-500', text: 'text-white', label: '结算中' },
-    completed: { bg: 'bg-blue-500', text: 'text-white', label: '已结束' }
-  };
-  const c = configs[status] || configs.pending;
-  return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${c.bg} ${c.text}`}>
-      <span className={`w-2 h-2 rounded-full mr-2 ${c.bg === 'bg-slate-500' ? 'bg-white/60' : 'bg-white'}`}></span>
-      {c.label}
-    </span>
-  );
-}
-
-function Card({ children, className = '' }) {
-  return (
-    <div className={`bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden ${className}`}>
-      {children}
-    </div>
-  );
-}
-
-function Input({ label, ...props }) {
-  return (
-    <div className="space-y-1">
-      {label && <label className="text-sm font-medium text-slate-600">{label}</label>}
-      <input
-        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-        {...props}
-      />
-    </div>
-  );
-}
-
-function Button({ children, variant = 'primary', className = '', ...props }) {
-  const variants = {
-    primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200',
-    success: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200',
-    danger: 'bg-red-600 hover:bg-red-700 text-white shadow-red-200',
-    ghost: 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-  };
-  return (
-    <button
-      className={`w-full px-6 py-3 rounded-xl font-semibold shadow-lg transition-all active:scale-95 ${variants[variant]} ${className}`}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Medal({ rank }) {
-  const medals = ['🥇', '🥈', '🥉'];
-  if (rank <= 3) return <span className="text-2xl">{medals[rank - 1]}</span>;
-  return <span className="text-lg font-bold text-slate-400">{rank}</span>;
-}
-
-function ProfitDisplay({ value }) {
-  const isProfit = value >= 0;
-  return (
-    <span className={`font-bold ${isProfit ? 'text-emerald-600' : 'text-red-500'}`}>
-      {isProfit ? '+' : ''}{value.toFixed(2)}
-    </span>
-  );
-}
+import Card from '../components/Card';
+import Button from '../components/Button';
+import StatusBadge from '../components/StatusBadge';
+import ProfitDisplay from '../components/ProfitDisplay';
+import Input from '../components/Input';
+import Medal from '../components/Medal';
+import { sanitizeText } from '../utils/safeRender';
 
 // 本地存储当前玩家报名状态
 function getMyPlayer() {
@@ -125,18 +64,9 @@ export default function PlayerPage() {
 
   useEffect(() => {
     refreshStatus();
-    const interval = setInterval(refreshStatus, 3000);
+    const interval = setInterval(refreshStatus, 8000);
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    if (status?.status === 'settling') {
-      getSettleProgress().then(p => setProgress(p));
-    }
-    if (status?.status === 'completed') {
-      getRankings().then(r => setRankings(r.rankings));
-    }
-  }, [status]);
 
   const handleJoin = async (e) => {
     e.preventDefault();
@@ -291,7 +221,7 @@ export default function PlayerPage() {
                         </div>
                         <div>
                           <div className="font-medium text-slate-800">
-                            {p.nickname}
+                            {sanitizeText(p.nickname)}
                             {p.id === myPlayer?.id && <span className="ml-1 text-xs text-blue-500">(你)</span>}
                           </div>
                           <div className="text-xs text-slate-500">入场 {p.initial_chips} 筹码</div>
@@ -304,7 +234,7 @@ export default function PlayerPage() {
                       <h4 className="text-xs font-semibold text-slate-400 mb-2">已离场</h4>
                       {allPlayers.filter(p => p.left_at).map(p => (
                         <div key={p.id} className="flex items-center justify-between p-2 bg-amber-50 rounded-lg text-sm">
-                          <span className="text-amber-700">{p.nickname}</span>
+                          <span className="text-amber-700">{sanitizeText(p.nickname)}</span>
                           <span className="text-amber-600">剩余 {p.final_chips} 筹码</span>
                         </div>
                       ))}
@@ -407,7 +337,7 @@ export default function PlayerPage() {
                       <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                         <div className="flex items-center gap-3">
                           <Medal rank={i + 1} />
-                          <span className="font-medium">{p.nickname}</span>
+                          <span className="font-medium">{sanitizeText(p.nickname)}</span>
                           <span className="text-xs text-slate-400">结算 {(p.total_settlement ?? 0).toFixed(2)} 元</span>
                         </div>
                         <ProfitDisplay value={p.money_net} />
@@ -456,7 +386,7 @@ export default function PlayerPage() {
                       <Medal rank={i + 1} />
                     </div>
                     <div className="flex-grow">
-                      <div className="font-bold text-slate-800">{p.nickname}</div>
+                      <div className="font-bold text-slate-800">{sanitizeText(p.nickname)}</div>
                       <div className="text-xs text-slate-500">
                         入场 {p.initial_chips} 筹码 · 结算 {(p.total_settlement ?? 0).toFixed(2)} 元
                       </div>

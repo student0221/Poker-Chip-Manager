@@ -6,8 +6,26 @@ function getSettings(callback) {
   db.get('SELECT status FROM settings WHERE id=1', callback);
 }
 
+function handlePlayerInsert(res, params) {
+  db.run(
+    'INSERT INTO players (name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?)',
+    params,
+    function(err) {
+      if (err) {
+        if (err.message && err.message.includes('UNIQUE constraint failed: players.nickname')) {
+          return res.status(409).json({ error: '该昵称已被使用，请换一个' });
+        }
+        return res.status(500).json({ error: err.message });
+      }
+      db.get('SELECT * FROM players WHERE id=?', [this.lastID], (err, row) => {
+        res.status(201).json(row);
+      });
+    }
+  );
+}
+
 router.get('/players', (req, res) => {
-  db.all('SELECT * FROM players ORDER BY created_at', (err, rows) => {
+  db.all('SELECT * FROM players WHERE deleted_at IS NULL ORDER BY created_at', (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
   });
@@ -29,34 +47,15 @@ router.post('/players/join', (req, res) => {
     const realName = name && name.trim() ? name.trim() : nickname;
 
     if (device_id) {
-      db.get('SELECT id FROM players WHERE device_id = ? AND left_at IS NULL', [device_id], (err, row) => {
+      db.get('SELECT id FROM players WHERE device_id = ? AND left_at IS NULL AND deleted_at IS NULL', [device_id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (row) {
           return res.status(409).json({ error: '该设备已报名，请勿重复入场' });
         }
-
-        db.run(
-          'INSERT INTO players (name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?)',
-          [realName, nickname, initial_chips, device_id || null],
-          function(err) {
-            if (err) return res.status(500).json({ error: err.message });
-            db.get('SELECT * FROM players WHERE id=?', [this.lastID], (err, row) => {
-              res.status(201).json(row);
-            });
-          }
-        );
+        handlePlayerInsert(res, [realName, nickname, initial_chips, device_id || null]);
       });
     } else {
-      db.run(
-        'INSERT INTO players (name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?)',
-        [realName, nickname, initial_chips, device_id || null],
-        function(err) {
-          if (err) return res.status(500).json({ error: err.message });
-          db.get('SELECT * FROM players WHERE id=?', [this.lastID], (err, row) => {
-            res.status(201).json(row);
-          });
-        }
-      );
+      handlePlayerInsert(res, [realName, nickname, initial_chips, device_id || null]);
     }
   });
 });
@@ -70,16 +69,7 @@ router.post('/players/admin-add', (req, res) => {
 
   const realName = name && name.trim() ? name.trim() : nickname;
 
-  db.run(
-    'INSERT INTO players (name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?)',
-    [realName, nickname, initial_chips, null],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      db.get('SELECT * FROM players WHERE id=?', [this.lastID], (err, row) => {
-        res.status(201).json(row);
-      });
-    }
-  );
+  handlePlayerInsert(res, [realName, nickname, initial_chips, null]);
 });
 
 // 玩家中途离场（running 状态下提交剩余筹码并标记离场）
@@ -91,7 +81,7 @@ router.post('/players/:id/leave', (req, res) => {
     return res.status(400).json({ error: '请提供有效的剩余筹码' });
   }
 
-  db.get('SELECT * FROM players WHERE id=?', [id], (err, player) => {
+  db.get('SELECT * FROM players WHERE id=? AND deleted_at IS NULL', [id], (err, player) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!player) return res.status(404).json({ error: '玩家不存在' });
     if (player.left_at) return res.status(409).json({ error: '该玩家已经离场' });
@@ -117,9 +107,9 @@ router.post('/players/:id/leave', (req, res) => {
 });
 
 router.delete('/players/:id', (req, res) => {
-  db.run('DELETE FROM players WHERE id=?', [req.params.id], function(err) {
+  db.run('UPDATE players SET deleted_at = ? WHERE id=?', [Date.now(), req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
-    res.status(204).send();
+    res.status(200).json({ message: '已删除' });
   });
 });
 

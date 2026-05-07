@@ -40,4 +40,19 @@ router.post('/rate', (req, res) => {
   });
 });
 
+router.post('/reset', (req, res) => {
+  const { confirm } = req.body;
+  if (!confirm || confirm !== 'RESET_ALL_PLAYERS') {
+    return res.status(400).json({ error: '缺少确认参数' });
+  }
+  
+  db.run('DELETE FROM players', (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    db.run("UPDATE settings SET status='pending', chip_rate=10, updated_at=? WHERE id=1", [Date.now()], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ status: 'pending', chip_rate: 10, message: '已重置，可以开始新比赛' });
+    });
+  });
+});
+
 module.exports = router;

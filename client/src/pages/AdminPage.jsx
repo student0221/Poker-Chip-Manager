@@ -1,56 +1,10 @@
 import { useState, useEffect } from 'react';
 import { getStatus, getPlayers, deletePlayer, getSettleProgress, adminAddPlayer } from '../api';
-
-function StatusBadge({ status }) {
-  const configs = {
-    pending: { bg: 'bg-slate-500', text: 'text-white', label: '等待开始' },
-    running: { bg: 'bg-emerald-500', text: 'text-white', label: '进行中' },
-    settling: { bg: 'bg-amber-500', text: 'text-white', label: '结算中' },
-    completed: { bg: 'bg-blue-500', text: 'text-white', label: '已结束' }
-  };
-  const c = configs[status] || configs.pending;
-  return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${c.bg} ${c.text}`}>
-      <span className={`w-2 h-2 rounded-full mr-2 ${c.bg === 'bg-slate-500' ? 'bg-white/60' : 'bg-white'}`}></span>
-      {c.label}
-    </span>
-  );
-}
-
-function Card({ children, className = '' }) {
-  return (
-    <div className={`bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden ${className}`}>
-      {children}
-    </div>
-  );
-}
-
-function Button({ children, variant = 'primary', className = '', ...props }) {
-  const variants = {
-    primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200',
-    success: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200',
-    warning: 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-200',
-    danger: 'bg-red-600 hover:bg-red-700 text-white shadow-red-200',
-    ghost: 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-  };
-  return (
-    <button
-      className={`px-4 py-2 rounded-xl font-semibold shadow-md transition-all active:scale-95 ${variants[variant]} ${className}`}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ProfitDisplay({ value }) {
-  const isProfit = value >= 0;
-  return (
-    <span className={`font-bold ${isProfit ? 'text-emerald-600' : 'text-red-500'}`}>
-      {isProfit ? '+' : ''}{value.toFixed(2)}
-    </span>
-  );
-}
+import Card from '../components/Card';
+import Button from '../components/Button';
+import StatusBadge from '../components/StatusBadge';
+import ProfitDisplay from '../components/ProfitDisplay';
+import { sanitizeText } from '../utils/safeRender';
 
 export default function AdminPage() {
   const [status, setStatus] = useState(null);
@@ -62,6 +16,7 @@ export default function AdminPage() {
   const [addForm, setAddForm] = useState({ nickname: '', initial_chips: '' });
   const [addMsg, setAddMsg] = useState('');
   const [manualFinal, setManualFinal] = useState({});
+  const [adminSecret, setAdminSecret] = useState(localStorage.getItem('poker_admin_secret') || '');
   const [message, setMessage] = useState('');
 
   const refresh = async () => {
@@ -80,7 +35,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, 3000);
+    const interval = setInterval(refresh, 8000);
     return () => clearInterval(interval);
   }, []);
 
@@ -119,20 +74,43 @@ export default function AdminPage() {
       setMessage('❌ 请输入有效的筹码比例（支持两位小数）');
       return;
     }
+    const formatted = parseFloat(val.toFixed(2));
     await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chip_rate: val })
+      body: JSON.stringify({ chip_rate: formatted })
     });
-    setRateCommitted(String(val));
+    setRateInput(formatted.toFixed(2));
+    setRateCommitted(formatted.toFixed(2));
     setMessage('✅ 筹码比例已更新');
     refresh();
   };
 
   const handleDelete = async (id) => {
     if (!confirm('确定删除该玩家？')) return;
-    await deletePlayer(id);
-    refresh();
+    try {
+      const res = await deletePlayer(id);
+      setMessage(res.message || '已删除');
+      refresh();
+    } catch (err) {
+      setMessage('❌ 删除失败');
+    }
+  };
+
+  const handleReset = async () => {
+    if (!confirm('确定重置？这将清空所有玩家数据，不可恢复。')) return;
+    const res = await fetch('/api/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: 'RESET_ALL_PLAYERS' })
+    });
+    if (res.ok) {
+      setMessage('✅ 已重置，可以开始新比赛');
+      setRankings(null);
+      refresh();
+    } else {
+      setMessage('❌ 重置失败');
+    }
   };
 
   const handleAddPlayer = async (e) => {
@@ -154,9 +132,13 @@ export default function AdminPage() {
   const handleManualFinal = async (id) => {
     const chips = parseInt(manualFinal[id]);
     if (isNaN(chips)) return;
+    const adminSecret = localStorage.getItem('poker_admin_secret') || '';
     await fetch(`/api/players/${id}/final`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Secret': adminSecret
+      },
       body: JSON.stringify({ final_chips: chips })
     });
     setManualFinal({ ...manualFinal, [id]: '' });
@@ -210,6 +192,21 @@ export default function AdminPage() {
               <Button variant="ghost" onClick={handleRateUpdate}>更新</Button>
             </div>
 
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+              <label className="block text-sm font-medium text-slate-600 mb-1">管理员密码</label>
+              <input
+                type="password"
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="首次使用请设置密码（默认: poker_admin_2026）"
+                value={adminSecret}
+                onChange={e => {
+                  localStorage.setItem('poker_admin_secret', e.target.value);
+                  setAdminSecret(e.target.value);
+                }}
+              />
+              <p className="text-xs text-slate-400 mt-1">密码存在本地浏览器，仅供鉴权使用</p>
+            </div>
+
             {message && (
               <div className="text-sm p-3 bg-blue-50 text-blue-700 rounded-lg">{message}</div>
             )}
@@ -228,6 +225,11 @@ export default function AdminPage() {
               {status.status === 'settling' && (
                 <Button variant="primary" onClick={handleSettle} className="flex-1">
                   💰 执行清算
+                </Button>
+              )}
+              {status.status === 'completed' && (
+                <Button variant="success" onClick={handleReset} className="flex-1">
+                  🔄 开始新比赛
                 </Button>
               )}
             </div>
@@ -271,6 +273,26 @@ export default function AdminPage() {
           </Card>
         )}
 
+        {/* Stats Summary */}
+        {players.length > 0 && (
+          <Card className="p-6 mb-6">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="text-sm text-slate-500">在场玩家</div>
+                <div className="text-xl font-bold text-blue-600">{players.filter(p => !p.left_at).length}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">总入场筹码</div>
+                <div className="text-xl font-bold text-emerald-600">{players.reduce((sum, p) => sum + p.initial_chips, 0)}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">已离场</div>
+                <div className="text-xl font-bold text-amber-600">{players.filter(p => p.left_at).length}</div>
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* Players List */}
         <Card className="mb-6">
           <div className="p-6">
@@ -289,11 +311,11 @@ export default function AdminPage() {
                     <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl ${isLeft ? 'bg-amber-50 border border-amber-100' : 'bg-slate-50'}`}>
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
-                          {p.nickname.charAt(0)}
+                          {sanitizeText(p.nickname).charAt(0)}
                         </div>
                         <div>
                           <div className="font-medium text-slate-800">
-                            {p.nickname}
+                            {sanitizeText(p.nickname)}
                             {isLeft && <span className="ml-2 text-xs text-amber-600 font-normal">(已离场)</span>}
                           </div>
                           <div className="text-xs text-slate-500">
@@ -341,7 +363,7 @@ export default function AdminPage() {
                   <h3 className="text-sm font-semibold text-slate-600">⚠️ 待提交（管理员可补录）</h3>
                   {progress.pending.map(p => (
                     <div key={p.id} className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl">
-                      <span className="font-medium text-amber-700">{p.nickname}</span>
+                      <span className="font-medium text-amber-700">{sanitizeText(p.nickname)}</span>
                       <input
                         type="number"
                         placeholder="补录筹码"
@@ -368,7 +390,7 @@ export default function AdminPage() {
                     <div key={p.id} className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl">
                       <div className="flex items-center gap-3">
                         <span className="text-lg font-bold text-slate-400">#{i + 1}</span>
-                        <span className="font-medium">{p.nickname}</span>
+                        <span className="font-medium">{sanitizeText(p.nickname)}</span>
                         <span className="text-xs text-slate-400">结算 {(p.total_settlement ?? 0).toFixed(2)} 元</span>
                       </div>
                       <ProfitDisplay value={p.money_net} />
@@ -400,7 +422,7 @@ export default function AdminPage() {
                       {i < 3 ? ['🥇', '🥈', '🥉'][i] : <span className="text-lg font-bold text-slate-400">{i + 1}</span>}
                     </div>
                     <div className="flex-grow">
-                      <div className="font-bold text-slate-800">{p.nickname}</div>
+                      <div className="font-bold text-slate-800">{sanitizeText(p.nickname)}</div>
                       <div className="text-xs text-slate-500">
                         入场 {p.initial_chips} 筹码 · 结算 {(p.total_settlement ?? 0).toFixed(2)} 元
                       </div>

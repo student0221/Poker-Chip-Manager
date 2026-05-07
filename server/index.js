@@ -4,6 +4,16 @@ const app = express();
 
 app.use(express.json());
 
+// 请求日志中间件
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} ${res.statusCode} ${duration}ms`);
+  });
+  next();
+});
+
 app.use('/api', require('./routes/settings'));
 app.use('/api', require('./routes/players'));
 app.use('/api', require('./routes/settle'));
