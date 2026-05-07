@@ -7,8 +7,7 @@
     "client": "cd client && npm run dev",
     "build": "cd client && npm run build",
     "start": "node server/index.js",
-    "test": "jest",
-    "postinstall": "cd client && npm install && npm run build"
+    "test": "jest"
   },
   "dependencies": {
     "express": "^4.18.2",

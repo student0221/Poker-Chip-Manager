@@ -1,64 +1,71 @@
 @echo off
 chcp 65001 >nul
-title 德州扑克筹码管理系统
 
 echo ==========================================
-echo   德州扑克筹码管理系统 - 启动脚本
+echo   Poker Chip Manager
 echo ==========================================
 echo.
 
-:: 检查 Node.js
 node -v >nul 2>&1
 if errorlevel 1 (
-    echo [错误] 未检测到 Node.js
+    echo [ERROR] Node.js not found.
+    echo Please install from https://nodejs.org
     echo.
-    echo 请先安装 Node.js：
-    echo https://nodejs.org/dist/v20.12.2/node-v20.12.2-x64.msi
-    echo.
-    echo 安装时全部选默认选项即可。
     pause
     exit /b 1
 )
 
-echo [✓] Node.js 已安装
+echo [OK] Node.js version:
 node -v
 echo.
 
-:: 检查是否在正确目录
 if not exist "server\index.js" (
-    echo [错误] 未找到 server/index.js，请确保在 Poker-Chip-Manager 目录下运行此脚本
+    echo [ERROR] server\index.js not found.
+    echo Please run this bat in the project folder.
     pause
     exit /b 1
 )
 
-:: 安装依赖（首次）或确保依赖完整
-echo [1/3] 正在安装依赖（首次需要几分钟，请耐心等待）...
+echo [1/4] Installing server dependencies...
 call npm install
 if errorlevel 1 (
-    echo [错误] 依赖安装失败
+    echo [ERROR] npm install failed.
     pause
     exit /b 1
 )
-
-echo [✓] 依赖安装完成
+echo [OK] Server dependencies installed.
 echo.
 
-:: 创建数据目录（兼容旧版本）
-echo [2/3] 检查数据目录...
+echo [2/4] Building frontend...
+cd client
+call npm install
+if errorlevel 1 (
+    echo [WARN] Client dependencies install failed. Retrying...
+    call npm install --legacy-peer-deps
+)
+call npm run build
+if errorlevel 1 (
+    echo [ERROR] Frontend build failed.
+    pause
+    exit /b 1
+)
+cd ..
+echo [OK] Frontend built.
+echo.
+
+echo [3/4] Checking data directory...
 if not exist "data" mkdir data
-echo [✓] 数据目录就绪
+echo [OK] Data directory ready.
 echo.
 
-:: 启动服务器
-echo [3/3] 正在启动服务器...
+echo [4/4] Starting server...
 echo.
 echo ==========================================
-echo  服务已启动！
-echo  管理后台：http://localhost:3000/#/admin
-echo  参与者： http://localhost:3000/
+echo  Server running at http://localhost:3000
+echo  Admin:   http://localhost:3000/#/admin
+echo  Player:  http://localhost:3000/
 echo ==========================================
-echo.
-echo 按 Ctrl+C 停止服务器
+echo  Press Ctrl+C to stop
 echo.
 
 call npm start
