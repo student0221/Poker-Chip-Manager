@@ -55,7 +55,8 @@ function ProfitDisplay({ value }) {
 export default function AdminPage() {
   const [status, setStatus] = useState(null);
   const [players, setPlayers] = useState([]);
-  const [rate, setRate] = useState('');
+  const [rateInput, setRateInput] = useState('');
+  const [rateCommitted, setRateCommitted] = useState('');
   const [rankings, setRankings] = useState(null);
   const [progress, setProgress] = useState(null);
   const [manualFinal, setManualFinal] = useState({});
@@ -65,7 +66,9 @@ export default function AdminPage() {
     const [s, p] = await Promise.all([getStatus(), getPlayers()]);
     setStatus(s);
     setPlayers(p);
-    setRate(s.chip_rate);
+    const rateStr = String(s.chip_rate ?? '');
+    setRateInput(rateStr);
+    setRateCommitted(rateStr);
     
     if (s.status === 'settling') {
       const prog = await getSettleProgress();
@@ -89,8 +92,27 @@ export default function AdminPage() {
     refresh();
   };
 
+  const handleRateChange = (e) => {
+    // 允许空值、数字、小数点，不做即时格式化，避免光标乱跳
+    const raw = e.target.value;
+    if (raw === '' || /^\d*\.?\d{0,2}$/.test(raw)) {
+      setRateInput(raw);
+    }
+  };
+
+  const handleRateBlur = () => {
+    const num = parseFloat(rateInput);
+    if (!isNaN(num) && num > 0) {
+      const formatted = num.toFixed(2);
+      setRateInput(formatted);
+      setRateCommitted(formatted);
+    } else {
+      setRateInput(rateCommitted);
+    }
+  };
+
   const handleRateUpdate = async () => {
-    const val = parseFloat(rate);
+    const val = parseFloat(rateInput);
     if (!val || val <= 0) {
       setMessage('❌ 请输入有效的筹码比例（支持两位小数）');
       return;
@@ -100,6 +122,7 @@ export default function AdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chip_rate: val })
     });
+    setRateCommitted(String(val));
     setMessage('✅ 筹码比例已更新');
     refresh();
   };
@@ -157,12 +180,13 @@ export default function AdminPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <label className="text-sm font-medium text-slate-600">筹码比例:</label>
               <input
-                type="number"
-                step="0.01"
-                min="0.01"
+                type="text"
+                inputMode="decimal"
                 className="w-28 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={rate}
-                onChange={e => setRate(e.target.value)}
+                value={rateInput}
+                onChange={handleRateChange}
+                onBlur={handleRateBlur}
+                placeholder="0.00"
               />
               <span className="text-slate-500">元</span>
               <Button variant="ghost" onClick={handleRateUpdate}>更新</Button>
@@ -203,30 +227,40 @@ export default function AdminPage() {
               <div className="text-center text-slate-400 py-8">暂无参与者</div>
             ) : (
               <div className="space-y-2">
-                {players.map(p => (
-                  <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
-                        {p.nickname.charAt(0)}
+                {players.map(p => {
+                  const totalSettlement = p.initial_chips * (status.chip_rate || 10);
+                  const isLeft = !!p.left_at;
+                  return (
+                    <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl ${isLeft ? 'bg-amber-50 border border-amber-100' : 'bg-slate-50'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
+                          {p.nickname.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="font-medium text-slate-800">
+                            {p.nickname}
+                            {isLeft && <span className="ml-2 text-xs text-amber-600 font-normal">(已离场)</span>}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {p.name !== p.nickname ? p.name + ' · ' : ''}
+                            入场 {p.initial_chips} 筹码 · 结算 {totalSettlement.toFixed(2)} 元
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="font-medium text-slate-800">{p.nickname}</div>
-                        <div className="text-xs text-slate-500">{p.name !== p.nickname ? p.name + ' · ' : ''}入场 {p.initial_chips} 筹码</div>
+                      <div className="flex items-center gap-2">
+                        {p.final_chips !== null && (
+                          <span className="text-sm text-slate-500">剩余 {p.final_chips}</span>
+                        )}
+                        <button
+                          onClick={() => handleDelete(p.id)}
+                          className="text-red-400 hover:text-red-600 px-2"
+                        >
+                          🗑️
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {p.final_chips !== null && (
-                        <span className="text-sm text-slate-500">剩余 {p.final_chips}</span>
-                      )}
-                      <button
-                        onClick={() => handleDelete(p.id)}
-                        className="text-red-400 hover:text-red-600 px-2"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -280,6 +314,7 @@ export default function AdminPage() {
                       <div className="flex items-center gap-3">
                         <span className="text-lg font-bold text-slate-400">#{i + 1}</span>
                         <span className="font-medium">{p.nickname}</span>
+                        <span className="text-xs text-slate-400">结算 {(p.total_settlement ?? 0).toFixed(2)} 元</span>
                       </div>
                       <ProfitDisplay value={p.money_net} />
                     </div>
@@ -312,7 +347,7 @@ export default function AdminPage() {
                     <div className="flex-grow">
                       <div className="font-bold text-slate-800">{p.nickname}</div>
                       <div className="text-xs text-slate-500">
-                        {p.initial_chips} → {p.final_chips} 筹码
+                        入场 {p.initial_chips} 筹码 · 结算 {(p.total_settlement ?? 0).toFixed(2)} 元
                       </div>
                     </div>
                     <div className="text-right">

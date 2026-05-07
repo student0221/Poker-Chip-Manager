@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getStatus, submitPlayer, submitFinal, getSettleProgress, getRankings } from '../api';
+import { getStatus, submitPlayer, submitFinal, getSettleProgress, getRankings, leavePlayer, getPlayers } from '../api';
 
 function StatusBadge({ status }) {
   const configs = {
@@ -69,29 +69,63 @@ function ProfitDisplay({ value }) {
   );
 }
 
+// 本地存储当前玩家报名状态
+function getMyPlayer() {
+  try {
+    const raw = localStorage.getItem('my_player');
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function setMyPlayer(data) {
+  localStorage.setItem('my_player', JSON.stringify(data));
+}
+function clearMyPlayer() {
+  localStorage.removeItem('my_player');
+}
+
 export default function PlayerPage() {
   const [status, setStatus] = useState(null);
+  const [allPlayers, setAllPlayers] = useState([]);
   const [joinForm, setJoinForm] = useState({ nickname: '', initial_chips: '' });
   const [finalForm, setFinalForm] = useState({ nickname: '', final_chips: '' });
+  const [leaveForm, setLeaveForm] = useState({ final_chips: '' });
   const [joinMsg, setJoinMsg] = useState('');
   const [finalMsg, setFinalMsg] = useState('');
+  const [leaveMsg, setLeaveMsg] = useState('');
   const [finalResult, setFinalResult] = useState(null);
   const [progress, setProgress] = useState(null);
   const [rankings, setRankings] = useState(null);
 
+  const myPlayer = getMyPlayer();
+
+  const refreshStatus = async () => {
+    const s = await getStatus();
+    setStatus(s);
+    if (s.status === 'settling') {
+      const p = await getSettleProgress();
+      setProgress(p);
+    }
+    if (s.status === 'completed') {
+      const r = await getRankings();
+      setRankings(r.rankings);
+    }
+    // running 状态下拉取玩家列表，确认自己是否还在场
+    if (s.status === 'running') {
+      const players = await getPlayers();
+      setAllPlayers(players);
+      const cached = getMyPlayer();
+      if (cached) {
+        const stillThere = players.find(p => p.id === cached.id && !p.left_at);
+        if (!stillThere) {
+          clearMyPlayer();
+        }
+      }
+    }
+  };
+
   useEffect(() => {
-    getStatus().then(s => setStatus(s));
-    const interval = setInterval(() => {
-      getStatus().then(s => {
-        setStatus(s);
-        if (s.status === 'settling') {
-          getSettleProgress().then(p => setProgress(p));
-        }
-        if (s.status === 'completed') {
-          getRankings().then(r => setRankings(r.rankings));
-        }
-      });
-    }, 3000);
+    refreshStatus();
+    const interval = setInterval(refreshStatus, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -107,14 +141,34 @@ export default function PlayerPage() {
   const handleJoin = async (e) => {
     e.preventDefault();
     try {
-      await submitPlayer({
-        ...joinForm,
+      const result = await submitPlayer({
+        name: joinForm.nickname,
+        nickname: joinForm.nickname,
         initial_chips: parseInt(joinForm.initial_chips)
       });
+      setMyPlayer({ id: result.id, nickname: result.nickname });
       setJoinMsg('报名成功！');
       setJoinForm({ nickname: '', initial_chips: '' });
+      refreshStatus();
     } catch (err) {
       setJoinMsg('❌ ' + err.message);
+    }
+  };
+
+  const handleLeave = async (e) => {
+    e.preventDefault();
+    if (!myPlayer) {
+      setLeaveMsg('❌ 未检测到报名记录');
+      return;
+    }
+    try {
+      const result = await leavePlayer(myPlayer.id, parseInt(leaveForm.final_chips));
+      clearMyPlayer();
+      setLeaveMsg('✅ ' + (result.message || '离场成功'));
+      setLeaveForm({ final_chips: '' });
+      refreshStatus();
+    } catch (err) {
+      setLeaveMsg('❌ ' + err.message);
     }
   };
 
@@ -122,7 +176,7 @@ export default function PlayerPage() {
     e.preventDefault();
     try {
       const result = await submitFinal({
-        ...finalForm,
+        nickname: finalForm.nickname,
         final_chips: parseInt(finalForm.final_chips)
       });
       setFinalResult(result);
@@ -163,42 +217,109 @@ export default function PlayerPage() {
           </Card>
         )}
 
-        {/* RUNNING - Join */}
+        {/* RUNNING - Join or Leave */}
         {status.status === 'running' && (
-          <Card>
-            <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white">
-              <h2 className="text-xl font-bold">📝 报名参加比赛</h2>
-              <p className="text-blue-100 text-sm mt-1">1筹码 = {status.chip_rate}元</p>
-            </div>
-            <form onSubmit={handleJoin} className="p-6 space-y-4">
-              <Input
-                label="昵称"
-                placeholder="请输入游戏昵称"
-                value={joinForm.nickname}
-                onChange={e => setJoinForm({...joinForm, nickname: e.target.value})}
-                required
-              />
-              <Input
-                label="入场筹码"
-                type="number"
-                placeholder="0"
-                value={joinForm.initial_chips}
-                onChange={e => setJoinForm({...joinForm, initial_chips: e.target.value})}
-                required
-              />
-              <Button type="submit" variant="primary">提交报名</Button>
-              {joinMsg && (
-                <div className="text-sm text-center mt-2 p-3 bg-emerald-50 text-emerald-700 rounded-lg">
-                  {joinMsg}
+          <div className="space-y-6">
+            {!myPlayer ? (
+              /* 未报名：显示入场表单 */
+              <Card>
+                <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+                  <h2 className="text-xl font-bold">📝 报名参加比赛</h2>
+                  <p className="text-blue-100 text-sm mt-1">1筹码 = {status.chip_rate}元</p>
                 </div>
-              )}
-            </form>
-          </Card>
+                <form onSubmit={handleJoin} className="p-6 space-y-4">
+                  <Input
+                    label="昵称"
+                    placeholder="请输入游戏昵称"
+                    value={joinForm.nickname}
+                    onChange={e => setJoinForm({...joinForm, nickname: e.target.value})}
+                    required
+                  />
+                  <Input
+                    label="入场筹码"
+                    type="number"
+                    placeholder="0"
+                    value={joinForm.initial_chips}
+                    onChange={e => setJoinForm({...joinForm, initial_chips: e.target.value})}
+                    required
+                  />
+                  <Button type="submit" variant="primary">提交报名</Button>
+                  {joinMsg && (
+                    <div className={`text-sm text-center mt-2 p-3 rounded-lg ${joinMsg.includes('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                      {joinMsg}
+                    </div>
+                  )}
+                </form>
+              </Card>
+            ) : (
+              /* 已报名：显示离场表单 */
+              <Card>
+                <div className="p-6 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+                  <h2 className="text-xl font-bold">🚪 离场结算</h2>
+                  <p className="text-amber-100 text-sm mt-1">你当前以「{myPlayer.nickname}」身份参赛</p>
+                  <p className="text-amber-100 text-xs mt-0.5">1筹码 = {status.chip_rate}元</p>
+                </div>
+                <form onSubmit={handleLeave} className="p-6 space-y-4">
+                  <Input
+                    label="当前剩余筹码"
+                    type="number"
+                    placeholder="输入离场时的筹码数量"
+                    value={leaveForm.final_chips}
+                    onChange={e => setLeaveForm({...leaveForm, final_chips: e.target.value})}
+                    required
+                  />
+                  <Button type="submit" variant="warning">确认离场</Button>
+                  {leaveMsg && (
+                    <div className={`text-sm text-center mt-2 p-3 rounded-lg ${leaveMsg.includes('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                      {leaveMsg}
+                    </div>
+                  )}
+                </form>
+              </Card>
+            )}
+
+            {/* 当前在场玩家列表 */}
+            {allPlayers.length > 0 && (
+              <Card className="p-6">
+                <h3 className="text-lg font-bold text-slate-700 mb-4">👥 当前在场玩家</h3>
+                <div className="space-y-2">
+                  {allPlayers.filter(p => !p.left_at).map(p => (
+                    <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl ${p.id === myPlayer?.id ? 'bg-blue-50 border border-blue-100' : 'bg-slate-50'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm">
+                          {p.nickname.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="font-medium text-slate-800">
+                            {p.nickname}
+                            {p.id === myPlayer?.id && <span className="ml-1 text-xs text-blue-500">(你)</span>}
+                          </div>
+                          <div className="text-xs text-slate-500">入场 {p.initial_chips} 筹码</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {allPlayers.filter(p => p.left_at).length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-100">
+                      <h4 className="text-xs font-semibold text-slate-400 mb-2">已离场</h4>
+                      {allPlayers.filter(p => p.left_at).map(p => (
+                        <div key={p.id} className="flex items-center justify-between p-2 bg-amber-50 rounded-lg text-sm">
+                          <span className="text-amber-700">{p.nickname}</span>
+                          <span className="text-amber-600">剩余 {p.final_chips} 筹码</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
+          </div>
         )}
 
         {/* SETTLING - Submit final chips */}
         {status.status === 'settling' && (
           <div className="space-y-6">
+            {/* 如果当前设备有报名记录但还没提交，优先提示；否则任何人都可以按昵称提交 */}
             <Card>
               <div className="p-6 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
                 <h2 className="text-xl font-bold">📊 提交最终筹码</h2>
@@ -258,6 +379,11 @@ export default function PlayerPage() {
                 <div className="mt-4 text-center text-sm text-slate-400">
                   筹码净值 {finalResult.chip_net} × 1筹码={finalResult.chip_rate}元 = {finalResult.money_net.toFixed(2)} 元
                 </div>
+                {finalResult.total_settlement > 0 && (
+                  <div className="mt-2 text-center text-sm text-slate-400">
+                    结算总金额（入场）: {finalResult.total_settlement.toFixed(2)} 元
+                  </div>
+                )}
               </Card>
             )}
 
@@ -282,6 +408,7 @@ export default function PlayerPage() {
                         <div className="flex items-center gap-3">
                           <Medal rank={i + 1} />
                           <span className="font-medium">{p.nickname}</span>
+                          <span className="text-xs text-slate-400">结算 {(p.total_settlement ?? 0).toFixed(2)} 元</span>
                         </div>
                         <ProfitDisplay value={p.money_net} />
                       </div>
@@ -331,7 +458,7 @@ export default function PlayerPage() {
                     <div className="flex-grow">
                       <div className="font-bold text-slate-800">{p.nickname}</div>
                       <div className="text-xs text-slate-500">
-                        {p.initial_chips} → {p.final_chips} 筹码
+                        入场 {p.initial_chips} 筹码 · 结算 {(p.total_settlement ?? 0).toFixed(2)} 元
                       </div>
                     </div>
                     <div className="text-right">

@@ -31,9 +31,24 @@ db.serialize(() => {
       initial_chips INTEGER NOT NULL DEFAULT 0,
       final_chips INTEGER DEFAULT NULL,
       net_profit REAL DEFAULT NULL,
+      device_id TEXT,
+      left_at INTEGER DEFAULT NULL,
       created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
     )
   `);
+
+  // 迁移旧表：如果表已存在但没有新列，则添加
+  db.all("PRAGMA table_info(players)", (err, cols) => {
+    if (err) return;
+    const hasDeviceId = cols.some(c => c.name === 'device_id');
+    const hasLeftAt = cols.some(c => c.name === 'left_at');
+    if (!hasDeviceId) {
+      db.run('ALTER TABLE players ADD COLUMN device_id TEXT');
+    }
+    if (!hasLeftAt) {
+      db.run('ALTER TABLE players ADD COLUMN left_at INTEGER DEFAULT NULL');
+    }
+  });
 
   db.get('SELECT id FROM settings WHERE id = 1', (err, row) => {
     if (!row) {
