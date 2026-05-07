@@ -1,9 +1,14 @@
-const sqlite3 = require('sqlite3').verbose();
+const fs = require('fs');
 const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
 
 const DB_PATH = process.env.TEST_DB
   ? ':memory:'
   : path.join(__dirname, '../data/poker.db');
+
+if (DB_PATH !== ':memory:') {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+}
 
 const db = new sqlite3.Database(DB_PATH);
 
