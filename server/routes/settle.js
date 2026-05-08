@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'poker_admin_2026';
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'admin123';
 
 function requireAdminSecret(req, res, next) {
   const provided = req.headers['x-admin-secret'] || req.body.admin_secret;

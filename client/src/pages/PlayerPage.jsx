@@ -186,7 +186,7 @@ export default function PlayerPage() {
               <Card>
                 <div className="p-6 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
                   <h2 className="text-xl font-bold">🚪 离场结算</h2>
-                  <p className="text-amber-100 text-sm mt-1">你当前以「{myPlayer.nickname}」身份参赛</p>
+                  <p className="text-amber-100 text-sm mt-1">你当前以「{sanitizeText(myPlayer.nickname)}」身份参赛</p>
                   <p className="text-amber-100 text-xs mt-0.5">1筹码 = {status.chip_rate}元</p>
                 </div>
                 <form onSubmit={handleLeave} className="p-6 space-y-4">
@@ -351,7 +351,7 @@ export default function PlayerPage() {
                     <h4 className="text-sm font-semibold text-slate-600">待提交</h4>
                     {progress.pending.map(p => (
                       <div key={p.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
-                        <span className="font-medium text-amber-700">{p.nickname}</span>
+                        <span className="font-medium text-amber-700">{sanitizeText(p.nickname)}</span>
                         <span className="text-sm text-amber-600">等待中...</span>
                       </div>
                     ))}
