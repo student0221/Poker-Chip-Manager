@@ -1,56 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getStatus, getPlayers, deletePlayer, getSettleProgress } from '../api';
-
-function StatusBadge({ status }) {
-  const configs = {
-    pending: { bg: 'bg-slate-500', text: 'text-white', label: '等待开始' },
-    running: { bg: 'bg-emerald-500', text: 'text-white', label: '进行中' },
-    settling: { bg: 'bg-amber-500', text: 'text-white', label: '结算中' },
-    completed: { bg: 'bg-blue-500', text: 'text-white', label: '已结束' }
-  };
-  const c = configs[status] || configs.pending;
-  return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${c.bg} ${c.text}`}>
-      <span className={`w-2 h-2 rounded-full mr-2 ${c.bg === 'bg-slate-500' ? 'bg-white/60' : 'bg-white'}`}></span>
-      {c.label}
-    </span>
-  );
-}
-
-function Card({ children, className = '' }) {
-  return (
-    <div className={`bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden ${className}`}>
-      {children}
-    </div>
-  );
-}
-
-function Button({ children, variant = 'primary', className = '', ...props }) {
-  const variants = {
-    primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200',
-    success: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200',
-    warning: 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-200',
-    danger: 'bg-red-600 hover:bg-red-700 text-white shadow-red-200',
-    ghost: 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-  };
-  return (
-    <button
-      className={`px-4 py-2 rounded-xl font-semibold shadow-md transition-all active:scale-95 ${variants[variant]} ${className}`}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ProfitDisplay({ value }) {
-  const isProfit = value >= 0;
-  return (
-    <span className={`font-bold ${isProfit ? 'text-emerald-600' : 'text-red-500'}`}>
-      {isProfit ? '+' : ''}{value.toFixed(2)}
-    </span>
-  );
-}
+import StatusBadge from '../components/StatusBadge';
+import Card from '../components/Card';
+import Button from '../components/Button';
+import ProfitDisplay from '../components/ProfitDisplay';
 
 export default function AdminPage() {
   const [status, setStatus] = useState(null);
@@ -60,12 +13,15 @@ export default function AdminPage() {
   const [progress, setProgress] = useState(null);
   const [manualFinal, setManualFinal] = useState({});
   const [message, setMessage] = useState('');
+  const isEditingRate = useRef(false);
 
   const refresh = async () => {
     const [s, p] = await Promise.all([getStatus(), getPlayers()]);
     setStatus(s);
     setPlayers(p);
-    setRate(s.chip_rate);
+    if (!isEditingRate.current) {
+      setRate(s.chip_rate);
+    }
     
     if (s.status === 'settling') {
       const prog = await getSettleProgress();
@@ -80,11 +36,13 @@ export default function AdminPage() {
   }, []);
 
   const handleStart = async () => {
+    if (!confirm('确定开始比赛？开始后玩家可以报名入场。')) return;
     await fetch('/api/start', { method: 'POST' });
     refresh();
   };
 
   const handleEnd = async () => {
+    if (!confirm('确定结束比赛？结束后进入结算阶段。')) return;
     await fetch('/api/end', { method: 'POST' });
     refresh();
   };
@@ -101,11 +59,12 @@ export default function AdminPage() {
       body: JSON.stringify({ chip_rate: val })
     });
     setMessage('✅ 筹码比例已更新');
+    isEditingRate.current = false;
     refresh();
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('确定删除该玩家？')) return;
+  const handleDelete = async (id, nickname) => {
+    if (!confirm(`确定删除玩家「${nickname}」？此操作不可恢复。`)) return;
     await deletePlayer(id);
     refresh();
   };
@@ -123,7 +82,12 @@ export default function AdminPage() {
   };
 
   const handleSettle = async () => {
-    if (!confirm('确定执行清算？未提交的玩家将按 0 筹码计算。')) return;
+    const pendingCount = progress?.pending?.length || 0;
+    let msg = '确定执行清算？';
+    if (pendingCount > 0) {
+      msg += ` 未提交的 ${pendingCount} 位玩家将按 0 筹码计算。`;
+    }
+    if (!confirm(msg)) return;
     const res = await fetch('/api/settle', { method: 'POST' });
     const data = await res.json();
     setRankings(data.rankings);
@@ -162,10 +126,12 @@ export default function AdminPage() {
                 min="0.01"
                 className="w-28 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={rate}
+                onFocus={() => isEditingRate.current = true}
+                onBlur={() => isEditingRate.current = false}
                 onChange={e => setRate(e.target.value)}
               />
               <span className="text-slate-500">元</span>
-              <Button variant="ghost" onClick={handleRateUpdate}>更新</Button>
+              <Button variant="ghost" size="sm" onClick={handleRateUpdate}>更新</Button>
             </div>
 
             {message && (
@@ -211,7 +177,9 @@ export default function AdminPage() {
                       </div>
                       <div>
                         <div className="font-medium text-slate-800">{p.nickname}</div>
-                        <div className="text-xs text-slate-500">{p.name !== p.nickname ? p.name + ' · ' : ''}入场 {p.initial_chips} 筹码</div>
+                        <div className="text-xs text-slate-500">
+                          {p.name !== p.nickname ? p.name + ' · ' : ''}入场 {p.initial_chips} 筹码
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -219,8 +187,9 @@ export default function AdminPage() {
                         <span className="text-sm text-slate-500">剩余 {p.final_chips}</span>
                       )}
                       <button
-                        onClick={() => handleDelete(p.id)}
+                        onClick={() => handleDelete(p.id, p.nickname)}
                         className="text-red-400 hover:text-red-600 px-2"
+                        title="删除玩家"
                       >
                         🗑️
                       </button>
@@ -255,14 +224,14 @@ export default function AdminPage() {
                       <span className="font-medium text-amber-700">{p.nickname}</span>
                       <input
                         type="number"
-                        placeholder="补录筹码"
+                        placeholder={`默认 ${p.initial_chips}`}
                         className="flex-1 px-3 py-2 bg-white border border-amber-200 rounded-lg text-sm"
                         value={manualFinal[p.id] || ''}
                         onChange={e => setManualFinal({ ...manualFinal, [p.id]: e.target.value })}
                       />
                       <Button
                         variant="warning"
-                        className="px-3 py-1 text-sm"
+                        size="sm"
                         onClick={() => handleManualFinal(p.id)}
                       >
                         补录
@@ -281,7 +250,12 @@ export default function AdminPage() {
                         <span className="text-lg font-bold text-slate-400">#{i + 1}</span>
                         <span className="font-medium">{p.nickname}</span>
                       </div>
-                      <ProfitDisplay value={p.money_net} />
+                      <div className="text-right">
+                        <ProfitDisplay value={p.money_net} />
+                        <div className="text-xs text-slate-400">
+                          总额 {(p.final_chips * p.chip_rate).toFixed(2)} 元
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -313,6 +287,9 @@ export default function AdminPage() {
                       <div className="font-bold text-slate-800">{p.nickname}</div>
                       <div className="text-xs text-slate-500">
                         {p.initial_chips} → {p.final_chips} 筹码
+                        <span className="ml-2 text-blue-500">
+                          总额 {(p.final_chips * status.chip_rate).toFixed(2)} 元
+                        </span>
                       </div>
                     </div>
                     <div className="text-right">

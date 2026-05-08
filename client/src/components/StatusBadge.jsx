@@ -1,19 +1,15 @@
 export default function StatusBadge({ status }) {
-  const colors = {
-    pending: 'bg-gray-200 text-gray-700',
-    running: 'bg-green-200 text-green-700',
-    settling: 'bg-yellow-200 text-yellow-700',
-    completed: 'bg-blue-200 text-blue-700'
+  const configs = {
+    pending: { bg: 'bg-slate-500', text: 'text-white', label: '等待开始' },
+    running: { bg: 'bg-emerald-500', text: 'text-white', label: '进行中' },
+    settling: { bg: 'bg-amber-500', text: 'text-white', label: '结算中' },
+    completed: { bg: 'bg-blue-500', text: 'text-white', label: '已结束' }
   };
-  const labels = {
-    pending: '等待开始',
-    running: '进行中',
-    settling: '清算中',
-    completed: '已结束'
-  };
+  const c = configs[status] || configs.pending;
   return (
-    <span className={`px-3 py-1 rounded-full text-sm font-medium ${colors[status] || colors.pending}`}>
-      {labels[status] || status}
+    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${c.bg} ${c.text}`}>
+      <span className={`w-2 h-2 rounded-full mr-2 ${c.bg === 'bg-slate-500' ? 'bg-white/60' : 'bg-white'}`}></span>
+      {c.label}
     </span>
   );
 }

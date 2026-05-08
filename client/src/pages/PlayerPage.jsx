@@ -1,79 +1,18 @@
 import { useState, useEffect } from 'react';
-import { getStatus, submitPlayer, submitFinal, getSettleProgress, getRankings } from '../api';
-
-function StatusBadge({ status }) {
-  const configs = {
-    pending: { bg: 'bg-slate-500', text: 'text-white', label: '等待开始' },
-    running: { bg: 'bg-emerald-500', text: 'text-white', label: '进行中' },
-    settling: { bg: 'bg-amber-500', text: 'text-white', label: '结算中' },
-    completed: { bg: 'bg-blue-500', text: 'text-white', label: '已结束' }
-  };
-  const c = configs[status] || configs.pending;
-  return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${c.bg} ${c.text}`}>
-      <span className={`w-2 h-2 rounded-full mr-2 ${c.bg === 'bg-slate-500' ? 'bg-white/60' : 'bg-white'}`}></span>
-      {c.label}
-    </span>
-  );
-}
-
-function Card({ children, className = '' }) {
-  return (
-    <div className={`bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden ${className}`}>
-      {children}
-    </div>
-  );
-}
-
-function Input({ label, ...props }) {
-  return (
-    <div className="space-y-1">
-      {label && <label className="text-sm font-medium text-slate-600">{label}</label>}
-      <input
-        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-        {...props}
-      />
-    </div>
-  );
-}
-
-function Button({ children, variant = 'primary', className = '', ...props }) {
-  const variants = {
-    primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200',
-    success: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200',
-    danger: 'bg-red-600 hover:bg-red-700 text-white shadow-red-200',
-    ghost: 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-  };
-  return (
-    <button
-      className={`w-full px-6 py-3 rounded-xl font-semibold shadow-lg transition-all active:scale-95 ${variants[variant]} ${className}`}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Medal({ rank }) {
-  const medals = ['🥇', '🥈', '🥉'];
-  if (rank <= 3) return <span className="text-2xl">{medals[rank - 1]}</span>;
-  return <span className="text-lg font-bold text-slate-400">{rank}</span>;
-}
-
-function ProfitDisplay({ value }) {
-  const isProfit = value >= 0;
-  return (
-    <span className={`font-bold ${isProfit ? 'text-emerald-600' : 'text-red-500'}`}>
-      {isProfit ? '+' : ''}{value.toFixed(2)}
-    </span>
-  );
-}
+import { getStatus, submitPlayer, submitFinal, getSettleProgress, getRankings, leaveGame } from '../api';
+import StatusBadge from '../components/StatusBadge';
+import Card from '../components/Card';
+import Input from '../components/Input';
+import Button from '../components/Button';
+import Medal from '../components/Medal';
+import ProfitDisplay from '../components/ProfitDisplay';
 
 export default function PlayerPage() {
   const [status, setStatus] = useState(null);
   const [joinForm, setJoinForm] = useState({ nickname: '', initial_chips: '' });
   const [finalForm, setFinalForm] = useState({ nickname: '', final_chips: '' });
   const [joinMsg, setJoinMsg] = useState('');
+  const [joinResult, setJoinResult] = useState(null);
   const [finalMsg, setFinalMsg] = useState('');
   const [finalResult, setFinalResult] = useState(null);
   const [progress, setProgress] = useState(null);
@@ -107,14 +46,15 @@ export default function PlayerPage() {
   const handleJoin = async (e) => {
     e.preventDefault();
     try {
-      await submitPlayer({
+      const result = await submitPlayer({
         ...joinForm,
         initial_chips: parseInt(joinForm.initial_chips)
       });
-      setJoinMsg('报名成功！');
+      setJoinResult(result);
+      setJoinMsg('✅ 报名成功！');
       setJoinForm({ nickname: '', initial_chips: '' });
     } catch (err) {
-      setJoinMsg('❌ ' + err.message);
+      setJoinMsg('❌ ' + (err.message || '报名失败'));
     }
   };
 
@@ -127,10 +67,21 @@ export default function PlayerPage() {
       });
       setFinalResult(result);
       setFinalMsg('✅ 提交成功！');
-      setFinalForm({ name: '', nickname: '', final_chips: '' });
+      setFinalForm({ nickname: '', final_chips: '' });
       getSettleProgress().then(p => setProgress(p));
     } catch (err) {
-      setFinalMsg('❌ ' + err.message);
+      setFinalMsg('❌ ' + (err.message || '提交失败'));
+    }
+  };
+
+  const handleLeave = async () => {
+    if (!confirm('确定退出比赛？退出后你的记录将被保留但不参与结算。')) return;
+    try {
+      const result = await leaveGame(joinResult?.id);
+      setJoinMsg('ℹ️ 已退出比赛');
+      setJoinResult(null);
+    } catch (err) {
+      setJoinMsg('❌ 退出失败：' + (err.message || '未知错误'));
     }
   };
 
@@ -152,6 +103,16 @@ export default function PlayerPage() {
           <div className="mt-4">
             <StatusBadge status={status.status} />
           </div>
+          {status.status === 'pending' && (
+            <p className="mt-2 text-sm text-slate-400">
+              1筹码 = {status.chip_rate}元 · 请等候管理员开始比赛
+            </p>
+          )}
+          {status.status === 'running' && (
+            <p className="mt-2 text-sm text-emerald-600">
+              1筹码 = {status.chip_rate}元 · 比赛进行中，欢迎报名
+            </p>
+          )}
         </div>
 
         {/* PENDING */}
@@ -160,40 +121,62 @@ export default function PlayerPage() {
             <div className="text-6xl mb-4">⏳</div>
             <h2 className="text-xl font-bold text-slate-700 mb-2">比赛即将开始</h2>
             <p className="text-slate-500">请稍候，管理员正在准备比赛...</p>
+            <div className="mt-4 text-sm text-slate-400">
+              筹码比例：{status.chip_rate} 元/筹码
+            </div>
           </Card>
         )}
 
         {/* RUNNING - Join */}
         {status.status === 'running' && (
-          <Card>
-            <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white">
-              <h2 className="text-xl font-bold">📝 报名参加比赛</h2>
-              <p className="text-blue-100 text-sm mt-1">1筹码 = {status.chip_rate}元</p>
-            </div>
-            <form onSubmit={handleJoin} className="p-6 space-y-4">
-              <Input
-                label="昵称"
-                placeholder="请输入游戏昵称"
-                value={joinForm.nickname}
-                onChange={e => setJoinForm({...joinForm, nickname: e.target.value})}
-                required
-              />
-              <Input
-                label="入场筹码"
-                type="number"
-                placeholder="0"
-                value={joinForm.initial_chips}
-                onChange={e => setJoinForm({...joinForm, initial_chips: e.target.value})}
-                required
-              />
-              <Button type="submit" variant="primary">提交报名</Button>
-              {joinMsg && (
-                <div className="text-sm text-center mt-2 p-3 bg-emerald-50 text-emerald-700 rounded-lg">
-                  {joinMsg}
+          <div className="space-y-4">
+            {!joinResult && (
+              <Card>
+                <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+                  <h2 className="text-xl font-bold">📝 报名参加比赛</h2>
+                  <p className="text-blue-100 text-sm mt-1">1筹码 = {status.chip_rate}元</p>
                 </div>
-              )}
-            </form>
-          </Card>
+                <form onSubmit={handleJoin} className="p-6 space-y-4">
+                  <Input
+                    label="昵称"
+                    placeholder="请输入游戏昵称"
+                    value={joinForm.nickname}
+                    onChange={e => setJoinForm({...joinForm, nickname: e.target.value})}
+                    required
+                  />
+                  <Input
+                    label="入场筹码"
+                    type="number"
+                    placeholder="0"
+                    value={joinForm.initial_chips}
+                    onChange={e => setJoinForm({...joinForm, initial_chips: e.target.value})}
+                    required
+                  />
+                  <Button type="submit" variant="primary">提交报名</Button>
+                  {joinMsg && (
+                    <div className={`text-sm text-center mt-2 p-3 rounded-lg ${joinMsg.includes('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                      {joinMsg}
+                    </div>
+                  )}
+                </form>
+              </Card>
+            )}
+
+            {joinResult && (
+              <Card className="p-6">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">🎫</div>
+                  <h3 className="text-lg font-bold text-slate-800">报名成功</h3>
+                  <p className="text-slate-500 mt-1">序号 #{joinResult.id} · {joinResult.nickname}</p>
+                  <p className="text-sm text-slate-400 mt-1">入场筹码：{joinResult.initial_chips}</p>
+                  <p className="text-xs text-slate-300 mt-2">请截图保存此凭证</p>
+                </div>
+                <Button variant="danger" size="lg" className="mt-4" onClick={handleLeave}>
+                  退出比赛
+                </Button>
+              </Card>
+            )}
+          </div>
         )}
 
         {/* SETTLING - Submit final chips */}
@@ -283,7 +266,12 @@ export default function PlayerPage() {
                           <Medal rank={i + 1} />
                           <span className="font-medium">{p.nickname}</span>
                         </div>
-                        <ProfitDisplay value={p.money_net} />
+                        <div className="text-right">
+                          <ProfitDisplay value={p.money_net} />
+                          <div className="text-xs text-slate-400">
+                            总额 {(p.final_chips * p.chip_rate).toFixed(2)} 元
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -332,6 +320,9 @@ export default function PlayerPage() {
                       <div className="font-bold text-slate-800">{p.nickname}</div>
                       <div className="text-xs text-slate-500">
                         {p.initial_chips} → {p.final_chips} 筹码
+                        <span className="ml-2 text-blue-500">
+                          总额 {(p.final_chips * status.chip_rate).toFixed(2)} 元
+                        </span>
                       </div>
                     </div>
                     <div className="text-right">

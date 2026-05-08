@@ -28,12 +28,28 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       nickname TEXT NOT NULL,
+      device_id TEXT,
       initial_chips INTEGER NOT NULL DEFAULT 0,
       final_chips INTEGER DEFAULT NULL,
       net_profit REAL DEFAULT NULL,
-      created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+      updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
     )
   `);
+
+  // 兼容旧数据库：增加 status 和 updated_at 列
+  db.all("PRAGMA table_info(players)", (err, cols) => {
+    if (err) return;
+    const hasStatus = cols.some(c => c.name === 'status');
+    const hasUpdatedAt = cols.some(c => c.name === 'updated_at');
+    if (!hasStatus) {
+      db.run("ALTER TABLE players ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+    }
+    if (!hasUpdatedAt) {
+      db.run("ALTER TABLE players ADD COLUMN updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)");
+    }
+  });
 
   db.get('SELECT id FROM settings WHERE id = 1', (err, row) => {
     if (!row) {
