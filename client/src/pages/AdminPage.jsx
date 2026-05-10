@@ -75,13 +75,13 @@ export default function AdminPage() {
       return;
     }
     const formatted = parseFloat(val.toFixed(2));
+    setRateInput(formatted.toFixed(2));
+    setRateCommitted(formatted.toFixed(2));
     await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chip_rate: formatted })
     });
-    setRateInput(formatted.toFixed(2));
-    setRateCommitted(formatted.toFixed(2));
     setMessage('✅ 筹码比例已更新');
     refresh();
   };
@@ -319,7 +319,7 @@ export default function AdminPage() {
                             {isLeft && <span className="ml-2 text-xs text-amber-600 font-normal">(已离场)</span>}
                           </div>
                           <div className="text-xs text-slate-500">
-                            {p.name !== p.nickname ? p.name + ' · ' : ''}
+                            {p.name !== p.nickname ? sanitizeText(p.name) + ' · ' : ''}
                             入场 {p.initial_chips} 筹码 · 结算 {totalSettlement.toFixed(2)} 元
                           </div>
                         </div>

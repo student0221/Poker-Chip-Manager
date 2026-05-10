@@ -217,7 +217,7 @@ export default function PlayerPage() {
                     <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl ${p.id === myPlayer?.id ? 'bg-blue-50 border border-blue-100' : 'bg-slate-50'}`}>
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm">
-                          {p.nickname.charAt(0)}
+                          {sanitizeText(p.nickname).charAt(0)}
                         </div>
                         <div>
                           <div className="font-medium text-slate-800">
