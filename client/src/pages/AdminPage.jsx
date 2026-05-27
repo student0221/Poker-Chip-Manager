@@ -74,7 +74,7 @@ export default function AdminPage() {
       setMessage('❌ 请输入有效的筹码比例（支持两位小数）');
       return;
     }
-    const formatted = parseFloat(raw.toFixed(2));
+    const formatted = parseFloat(parseFloat(rateInput).toFixed(2));
     setRateInput(formatted.toFixed(2));
     setRateCommitted(formatted.toFixed(2));
     await fetch('/api/rate', {
