@@ -69,12 +69,12 @@ export default function AdminPage() {
   };
 
   const handleRateUpdate = async () => {
-    const raw = parseFloat(rateInput);
-    if (!raw || raw <= 0) {
+    const num = parseFloat(rateInput);
+    if (isNaN(num) || num <= 0) {
       setMessage('❌ 请输入有效的筹码比例（支持两位小数）');
       return;
     }
-    const formatted = parseFloat(parseFloat(rateInput).toFixed(2));
+    const formatted = parseFloat(num.toFixed(2));
     setRateInput(formatted.toFixed(2));
     setRateCommitted(formatted.toFixed(2));
     await fetch('/api/rate', {
