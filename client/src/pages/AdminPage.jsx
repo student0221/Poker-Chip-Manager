@@ -60,9 +60,9 @@ export default function AdminPage() {
   const handleRateBlur = () => {
     const num = parseFloat(rateInput);
     if (!isNaN(num) && num > 0) {
-      const formatted = num.toFixed(2);
-      setRateInput(formatted);
-      setRateCommitted(formatted);
+      const formatted = parseFloat(num.toFixed(2));
+      setRateInput(formatted.toFixed(2));
+      setRateCommitted(formatted.toFixed(2));
     } else {
       setRateInput(rateCommitted);
     }
