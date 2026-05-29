@@ -7,6 +7,7 @@ import ProfitDisplay from '../components/ProfitDisplay';
 import { sanitizeText } from '../utils/safeRender';
 
 export default function AdminPage() {
+  const defaultAdminSecret = 'admin123';
   const [status, setStatus] = useState(null);
   const [players, setPlayers] = useState([]);
   const [rateInput, setRateInput] = useState('');
@@ -69,17 +70,26 @@ export default function AdminPage() {
   };
 
   const handleRateUpdate = async () => {
+    if (status?.status !== 'pending') {
+      setMessage('Only pending games can change the chip rate.');
+      return;
+    }
     const val = parseFloat(rateInput);
     if (!val || val <= 0) {
       setMessage('❌ 请输入有效的筹码比例（支持两位小数）');
       return;
     }
     const formatted = parseFloat(val.toFixed(2));
-    await fetch('/api/rate', {
+    const res = await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chip_rate: formatted })
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      setMessage(err?.error || 'Failed to update chip rate.');
+      return;
+    }
     setRateInput(formatted.toFixed(2));
     setRateCommitted(formatted.toFixed(2));
     setMessage('✅ 筹码比例已更新');
@@ -133,7 +143,7 @@ export default function AdminPage() {
     const chips = parseInt(manualFinal[id]);
     if (isNaN(chips)) return;
     const adminSecret = localStorage.getItem('poker_admin_secret') || '';
-    await fetch(`/api/players/${id}/final`, {
+    const res = await fetch(`/api/players/${id}/final`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -141,6 +151,11 @@ export default function AdminPage() {
       },
       body: JSON.stringify({ final_chips: chips })
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      setMessage(err?.error || 'Failed to update final chips.');
+      return;
+    }
     setManualFinal({ ...manualFinal, [id]: '' });
     refresh();
   };
@@ -187,9 +202,10 @@ export default function AdminPage() {
                 onChange={handleRateChange}
                 onBlur={handleRateBlur}
                 placeholder="0.00"
+                disabled={status.status !== 'pending'}
               />
               <span className="text-slate-500">元</span>
-              <Button variant="ghost" onClick={handleRateUpdate}>更新</Button>
+              <Button variant="ghost" onClick={handleRateUpdate} disabled={status.status !== 'pending'}>更新</Button>
             </div>
 
             <div className="mb-4 p-3 bg-blue-50 rounded-lg">
@@ -197,7 +213,7 @@ export default function AdminPage() {
               <input
                 type="password"
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="首次使用请设置密码（默认: poker_admin_2026）"
+                placeholder={`First use: enter admin secret (default: ${defaultAdminSecret})`}
                 value={adminSecret}
                 onChange={e => {
                   localStorage.setItem('poker_admin_secret', e.target.value);

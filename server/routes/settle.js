@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'admin123';
+const DEFAULT_ADMIN_SECRET = 'admin123';
+const ADMIN_SECRET = process.env.ADMIN_SECRET || DEFAULT_ADMIN_SECRET;
 
 function requireAdminSecret(req, res, next) {
   const provided = req.headers['x-admin-secret'] || req.body.admin_secret;
@@ -51,8 +52,12 @@ router.post('/submit-final', (req, res) => {
     return res.status(400).json({ error: '请提供昵称和最终筹码' });
   }
 
-  db.get('SELECT chip_rate FROM settings WHERE id=1', (err, settings) => {
+  db.get('SELECT chip_rate, status FROM settings WHERE id=1', (err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
+    if (!settings) return res.status(500).json({ error: 'Settings unavailable' });
+    if (settings.status !== 'settling') {
+      return res.status(409).json({ error: 'Final chips can only be submitted during settlement', currentStatus: settings.status });
+    }
     
     db.all('SELECT * FROM players WHERE nickname=? AND deleted_at IS NULL', [nickname], (err, players) => {
       if (err) return res.status(500).json({ error: err.message });

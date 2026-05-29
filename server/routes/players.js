@@ -13,11 +13,12 @@ function handlePlayerInsert(res, params) {
     function(err) {
       if (err) {
         if (err.message && err.message.includes('UNIQUE constraint failed: players.nickname')) {
-          return res.status(409).json({ error: '该昵称已被使用，请换一个' });
+          return res.status(409).json({ error: 'Nickname is already in use' });
         }
         return res.status(500).json({ error: err.message });
       }
-      db.get('SELECT * FROM players WHERE id=?', [this.lastID], (err, row) => {
+      db.get('SELECT * FROM players WHERE id=?', [this.lastID], (getErr, row) => {
+        if (getErr) return res.status(500).json({ error: getErr.message });
         res.status(201).json(row);
       });
     }
@@ -31,12 +32,11 @@ router.get('/players', (req, res) => {
   });
 });
 
-// 玩家自助报名（仅 running 状态，设备绑定防重）
 router.post('/players/join', (req, res) => {
   getSettings((err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!settings || settings.status !== 'running') {
-      return res.status(403).json({ error: '比赛未开始或已结束' });
+      return res.status(403).json({ error: 'Game is not accepting player signups' });
     }
 
     const { name, nickname, initial_chips, device_id } = req.body;
@@ -47,10 +47,10 @@ router.post('/players/join', (req, res) => {
     const realName = name && name.trim() ? name.trim() : nickname;
 
     if (device_id) {
-      db.get('SELECT id FROM players WHERE device_id = ? AND left_at IS NULL AND deleted_at IS NULL', [device_id], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
+      db.get('SELECT id FROM players WHERE device_id = ? AND left_at IS NULL AND deleted_at IS NULL', [device_id], (deviceErr, row) => {
+        if (deviceErr) return res.status(500).json({ error: deviceErr.message });
         if (row) {
-          return res.status(409).json({ error: '该设备已报名，请勿重复入场' });
+          return res.status(409).json({ error: 'This device has already joined the current game' });
         }
         handlePlayerInsert(res, [realName, nickname, initial_chips, device_id || null]);
       });
@@ -60,56 +60,67 @@ router.post('/players/join', (req, res) => {
   });
 });
 
-// 管理员直接添加玩家（pending / running 均可，不检查 device_id）
 router.post('/players/admin-add', (req, res) => {
-  const { name, nickname, initial_chips } = req.body;
-  if (!nickname || initial_chips === undefined || initial_chips < 0) {
-    return res.status(400).json({ error: 'Invalid player data' });
-  }
+  getSettings((err, settings) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!settings || !['pending', 'running'].includes(settings.status)) {
+      return res.status(409).json({ error: 'Players can only be added before settlement begins', currentStatus: settings?.status || null });
+    }
 
-  const realName = name && name.trim() ? name.trim() : nickname;
+    const { name, nickname, initial_chips } = req.body;
+    if (!nickname || initial_chips === undefined || initial_chips < 0) {
+      return res.status(400).json({ error: 'Invalid player data' });
+    }
 
-  handlePlayerInsert(res, [realName, nickname, initial_chips, null]);
+    const realName = name && name.trim() ? name.trim() : nickname;
+    handlePlayerInsert(res, [realName, nickname, initial_chips, null]);
+  });
 });
 
-// 玩家中途离场（running 状态下提交剩余筹码并标记离场）
 router.post('/players/:id/leave', (req, res) => {
   const { final_chips, device_id } = req.body;
   const id = req.params.id;
 
   if (final_chips === undefined || final_chips < 0) {
-    return res.status(400).json({ error: '请提供有效的剩余筹码' });
+    return res.status(400).json({ error: 'Invalid final_chips value' });
   }
 
-  db.get('SELECT * FROM players WHERE id=? AND deleted_at IS NULL', [id], (err, player) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!player) return res.status(404).json({ error: '玩家不存在' });
-    if (player.left_at) return res.status(409).json({ error: '该玩家已经离场' });
-    if (device_id && player.device_id && player.device_id !== device_id) {
-      return res.status(403).json({ error: '设备不匹配，无法代他人离场' });
+  getSettings((settingsErr, settings) => {
+    if (settingsErr) return res.status(500).json({ error: settingsErr.message });
+    if (!settings || settings.status !== 'running') {
+      return res.status(409).json({ error: 'Players can only leave while the game is running', currentStatus: settings?.status || null });
     }
 
-    db.run(
-      'UPDATE players SET final_chips=?, left_at=? WHERE id=?',
-      [final_chips, Date.now(), id],
-      function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        db.get('SELECT * FROM players WHERE id=?', [id], (err, row) => {
-          if (err) return res.status(500).json({ error: err.message });
-          res.json({
-            ...row,
-            message: '离场成功，筹码已记录'
-          });
-        });
+    db.get('SELECT * FROM players WHERE id=? AND deleted_at IS NULL', [id], (err, player) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!player) return res.status(404).json({ error: 'Player not found' });
+      if (player.left_at) return res.status(409).json({ error: 'Player has already left' });
+      if (device_id && player.device_id && player.device_id !== device_id) {
+        return res.status(403).json({ error: 'Device mismatch for player leave request' });
       }
-    );
+
+      db.run(
+        'UPDATE players SET final_chips=?, left_at=? WHERE id=?',
+        [final_chips, Date.now(), id],
+        function(runErr) {
+          if (runErr) return res.status(500).json({ error: runErr.message });
+          db.get('SELECT * FROM players WHERE id=?', [id], (getErr, row) => {
+            if (getErr) return res.status(500).json({ error: getErr.message });
+            res.json({
+              ...row,
+              message: 'Player leave recorded'
+            });
+          });
+        }
+      );
+    });
   });
 });
 
 router.delete('/players/:id', (req, res) => {
   db.run('UPDATE players SET deleted_at = ? WHERE id=?', [Date.now(), req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
-    res.status(200).json({ message: '已删除' });
+    res.status(200).json({ message: 'Player removed' });
   });
 });
 
