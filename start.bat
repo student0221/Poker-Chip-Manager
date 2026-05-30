@@ -65,9 +65,17 @@ echo  Server running at http://localhost:3000
 echo  Admin:   http://localhost:3000/#/admin
 echo  Player:  http://localhost:3000/
 echo ==========================================
-echo  Press Ctrl+C to stop
 echo.
 
-call npm start
+start "Poker Server" cmd /k "npm start"
 
-pause
+echo Waiting for server to start...
+timeout /t 2 /nobreak >nul
+
+echo Opening admin page in browser...
+start http://localhost:3000/#/admin
+
+echo.
+echo Server is running in the background.
+echo Press any key to close this window (server will keep running).
+pause >nul
