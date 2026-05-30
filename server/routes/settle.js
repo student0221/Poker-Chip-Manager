@@ -133,8 +133,11 @@ router.post('/settle', (req, res) => {
       const total = players.length;
 
       if (total === 0) {
-        db.run("UPDATE settings SET status='completed', updated_at=? WHERE id=1 AND status='settling'", [Date.now()], updateErr => {
-          if (updateErr) return res.status(500).json({ error: updateErr.message });
+        db.run("UPDATE settings SET status='completed', updated_at=? WHERE id=1 AND status='settling'", [Date.now()], function(err) {
+          if (err) return res.status(500).json({ error: err.message });
+          if (this.changes === 0) {
+            return res.status(409).json({ error: '清算已被执行，请勿重复提交' });
+          }
           res.json({ rankings: [] });
         });
         return;
@@ -147,10 +150,12 @@ router.post('/settle', (req, res) => {
           if (runErr) return res.status(500).json({ error: runErr.message });
           completed++;
           if (completed === total) {
-            db.run("UPDATE settings SET status='completed', updated_at=? WHERE id=1 AND status='settling'", [Date.now()], updateErr => {
-              if (updateErr) return res.status(500).json({ error: updateErr.message });
-              db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit FROM players WHERE deleted_at IS NULL ORDER BY net_profit DESC', (rankErr, rankings) => {
-                if (rankErr) return res.status(500).json({ error: rankErr.message });
+            db.run("UPDATE settings SET status='completed', updated_at=? WHERE id=1 AND status='settling'", [Date.now()], function(err) {
+              if (err) return res.status(500).json({ error: err.message });
+              if (this.changes === 0) {
+                return res.status(409).json({ error: '清算已被执行，请勿重复提交' });
+              }
+              db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit FROM players WHERE deleted_at IS NULL ORDER BY net_profit DESC', (err, rankings) => {
                 const enriched = (rankings || []).map(r => ({
                   ...r,
                   total_settlement: r.initial_chips * settings.chip_rate

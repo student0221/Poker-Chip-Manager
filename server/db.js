@@ -27,7 +27,7 @@ db.serialize(() => {
     CREATE TABLE IF NOT EXISTS players (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      nickname TEXT NOT NULL,
+      nickname TEXT NOT NULL UNIQUE,
       initial_chips INTEGER NOT NULL DEFAULT 0,
       final_chips INTEGER DEFAULT NULL,
       net_profit REAL DEFAULT NULL,

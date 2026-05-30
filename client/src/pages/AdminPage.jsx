@@ -61,9 +61,9 @@ export default function AdminPage() {
   const handleRateBlur = () => {
     const num = parseFloat(rateInput);
     if (!isNaN(num) && num > 0) {
-      const formatted = num.toFixed(2);
-      setRateInput(formatted);
-      setRateCommitted(formatted);
+      const formatted = parseFloat(num.toFixed(2));
+      setRateInput(formatted.toFixed(2));
+      setRateCommitted(formatted.toFixed(2));
     } else {
       setRateInput(rateCommitted);
     }
@@ -71,15 +71,15 @@ export default function AdminPage() {
 
   const handleRateUpdate = async () => {
     if (status?.status !== 'pending') {
-      setMessage('Only pending games can change the chip rate.');
+      setMessage('❌ 只有在比赛未开始时才能修改筹码比例');
       return;
     }
-    const val = parseFloat(rateInput);
-    if (!val || val <= 0) {
-      setMessage('请输入有效的筹码比例');
+    const num = parseFloat(rateInput);
+    if (isNaN(num) || num <= 0) {
+      setMessage('❌ 请输入有效的筹码比例（支持两位小数）');
       return;
     }
-    const formatted = parseFloat(val.toFixed(2));
+    const formatted = parseFloat(num.toFixed(2));
     const res = await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -87,12 +87,12 @@ export default function AdminPage() {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      setMessage(err?.error || 'Failed to update chip rate.');
+      setMessage(err?.error || '❌ 更新筹码比例失败');
       return;
     }
     setRateInput(formatted.toFixed(2));
     setRateCommitted(formatted.toFixed(2));
-    setMessage('筹码比例已更新');
+    setMessage('✅ 筹码比例已更新');
     refresh();
   };
 
@@ -329,7 +329,7 @@ export default function AdminPage() {
                               {isLeft && <span className="ml-2 text-xs text-amber-600 font-normal">(已离场)</span>}
                             </div>
                             <div className="text-xs text-slate-500">
-                              {p.name !== p.nickname ? `${p.name} · ` : ''}
+                              {p.name !== p.nickname ? sanitizeText(p.name) + ' · ' : ''}
                               入场 {p.initial_chips} 筹码 · 结算 {totalSettlement.toFixed(2)} 元
                             </div>
                           </div>
