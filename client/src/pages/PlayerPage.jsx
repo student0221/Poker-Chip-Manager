@@ -6,6 +6,7 @@ import StatusBadge from '../components/StatusBadge';
 import ProfitDisplay from '../components/ProfitDisplay';
 import Input from '../components/Input';
 import Medal from '../components/Medal';
+import PokerRules from '../components/PokerRules';
 import { sanitizeText } from '../utils/safeRender';
 
 // 本地存储当前玩家报名状态
@@ -434,6 +435,11 @@ export default function PlayerPage() {
             )}
           </div>
         )}
+
+        {/* 游戏规则 & 牌型胜率（常驻底部） */}
+        <div className="mt-8">
+          <PokerRules />
+        </div>
       </div>
     </div>
   );

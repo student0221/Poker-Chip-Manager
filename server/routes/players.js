@@ -77,6 +77,41 @@ router.post('/players/admin-add', (req, res) => {
   });
 });
 
+router.post('/players/:id/add-chips', (req, res) => {
+  const id = req.params.id;
+  const amount = Number(req.body.amount);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Invalid chip amount' });
+  }
+
+  getSettings((settingsErr, settings) => {
+    if (settingsErr) return res.status(500).json({ error: settingsErr.message });
+    if (!settings || settings.status !== 'running') {
+      return res.status(409).json({ error: 'Chips can only be added while the game is running', currentStatus: settings?.status || null });
+    }
+
+    db.get('SELECT * FROM players WHERE id=? AND deleted_at IS NULL', [id], (err, player) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!player) return res.status(404).json({ error: 'Player not found' });
+      if (player.left_at) return res.status(409).json({ error: 'Cannot add chips after the player has left' });
+
+      const nextInitialChips = player.initial_chips + amount;
+      db.run('UPDATE players SET initial_chips=? WHERE id=?', [nextInitialChips, id], function(runErr) {
+        if (runErr) return res.status(500).json({ error: runErr.message });
+        db.get('SELECT * FROM players WHERE id=?', [id], (getErr, row) => {
+          if (getErr) return res.status(500).json({ error: getErr.message });
+          res.json({
+            ...row,
+            added_chips: amount,
+            message: 'Chips added successfully'
+          });
+        });
+      });
+    });
+  });
+});
+
 router.post('/players/:id/leave', (req, res) => {
   const { final_chips, device_id } = req.body;
   const id = req.params.id;

@@ -7,7 +7,6 @@ import ProfitDisplay from '../components/ProfitDisplay';
 import { sanitizeText } from '../utils/safeRender';
 
 export default function AdminPage() {
-  const defaultAdminSecret = 'admin123';
   const [status, setStatus] = useState(null);
   const [players, setPlayers] = useState([]);
   const [rateInput, setRateInput] = useState('');
@@ -17,7 +16,7 @@ export default function AdminPage() {
   const [addForm, setAddForm] = useState({ nickname: '', initial_chips: '' });
   const [addMsg, setAddMsg] = useState('');
   const [manualFinal, setManualFinal] = useState({});
-  const [adminSecret, setAdminSecret] = useState(localStorage.getItem('poker_admin_secret') || '');
+  const [chipAdds, setChipAdds] = useState({});
   const [message, setMessage] = useState('');
 
   const refresh = async () => {
@@ -27,10 +26,12 @@ export default function AdminPage() {
     const rateStr = String(s.chip_rate ?? '');
     setRateInput(rateStr);
     setRateCommitted(rateStr);
-    
+
     if (s.status === 'settling') {
       const prog = await getSettleProgress();
       setProgress(prog);
+    } else {
+      setProgress(null);
     }
   };
 
@@ -51,7 +52,6 @@ export default function AdminPage() {
   };
 
   const handleRateChange = (e) => {
-    // 允许空值、数字、小数点，不做即时格式化，避免光标乱跳
     const raw = e.target.value;
     if (raw === '' || /^\d*\.?\d{0,2}$/.test(raw)) {
       setRateInput(raw);
@@ -76,7 +76,7 @@ export default function AdminPage() {
     }
     const val = parseFloat(rateInput);
     if (!val || val <= 0) {
-      setMessage('❌ 请输入有效的筹码比例（支持两位小数）');
+      setMessage('请输入有效的筹码比例');
       return;
     }
     const formatted = parseFloat(val.toFixed(2));
@@ -92,7 +92,7 @@ export default function AdminPage() {
     }
     setRateInput(formatted.toFixed(2));
     setRateCommitted(formatted.toFixed(2));
-    setMessage('✅ 筹码比例已更新');
+    setMessage('筹码比例已更新');
     refresh();
   };
 
@@ -102,8 +102,8 @@ export default function AdminPage() {
       const res = await deletePlayer(id);
       setMessage(res.message || '已删除');
       refresh();
-    } catch (err) {
-      setMessage('❌ 删除失败');
+    } catch {
+      setMessage('删除失败');
     }
   };
 
@@ -115,11 +115,11 @@ export default function AdminPage() {
       body: JSON.stringify({ confirm: 'RESET_ALL_PLAYERS' })
     });
     if (res.ok) {
-      setMessage('✅ 已重置，可以开始新比赛');
+      setMessage('已重置，可以开始新比赛');
       setRankings(null);
       refresh();
     } else {
-      setMessage('❌ 重置失败');
+      setMessage('重置失败');
     }
   };
 
@@ -129,26 +129,46 @@ export default function AdminPage() {
       await adminAddPlayer({
         name: addForm.nickname,
         nickname: addForm.nickname,
-        initial_chips: parseInt(addForm.initial_chips)
+        initial_chips: parseInt(addForm.initial_chips, 10)
       });
-      setAddMsg('✅ 添加成功');
+      setAddMsg('添加成功');
       setAddForm({ nickname: '', initial_chips: '' });
       refresh();
     } catch (err) {
-      setAddMsg('❌ ' + err.message);
+      setAddMsg(err.message);
     }
   };
 
+  const handleAddChips = async (id) => {
+    const amount = parseInt(chipAdds[id], 10);
+    if (isNaN(amount) || amount <= 0) {
+      setMessage('请输入有效的补筹码数量');
+      return;
+    }
+
+    const res = await fetch(`/api/players/${id}/add-chips`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      setMessage(err?.error || 'Failed to add chips.');
+      return;
+    }
+
+    setChipAdds({ ...chipAdds, [id]: '' });
+    setMessage('补筹码成功');
+    refresh();
+  };
+
   const handleManualFinal = async (id) => {
-    const chips = parseInt(manualFinal[id]);
+    const chips = parseInt(manualFinal[id], 10);
     if (isNaN(chips)) return;
-    const adminSecret = localStorage.getItem('poker_admin_secret') || '';
     const res = await fetch(`/api/players/${id}/final`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Admin-Secret': adminSecret
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ final_chips: chips })
     });
     if (!res.ok) {
@@ -157,6 +177,7 @@ export default function AdminPage() {
       return;
     }
     setManualFinal({ ...manualFinal, [id]: '' });
+    setMessage('补录成功');
     refresh();
   };
 
@@ -179,18 +200,16 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50">
       <div className="max-w-3xl mx-auto px-4 py-8">
-        {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-extrabold text-slate-800 mb-2">🎰 比赛管理后台</h1>
+          <h1 className="text-3xl font-extrabold text-slate-800 mb-2">比赛管理后台</h1>
           <div className="mt-4">
             <StatusBadge status={status.status} />
           </div>
         </div>
 
-        {/* Controls */}
         <Card className="p-6 mb-6">
-          <h2 className="text-lg font-bold text-slate-700 mb-4">⚙️ 比赛控制</h2>
-          
+          <h2 className="text-lg font-bold text-slate-700 mb-4">比赛控制</h2>
+
           <div className="space-y-4">
             <div className="flex items-center gap-3 flex-wrap">
               <label className="text-sm font-medium text-slate-600">筹码比例:</label>
@@ -208,54 +227,30 @@ export default function AdminPage() {
               <Button variant="ghost" onClick={handleRateUpdate} disabled={status.status !== 'pending'}>更新</Button>
             </div>
 
-            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-              <label className="block text-sm font-medium text-slate-600 mb-1">管理员密码</label>
-              <input
-                type="password"
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={`First use: enter admin secret (default: ${defaultAdminSecret})`}
-                value={adminSecret}
-                onChange={e => {
-                  localStorage.setItem('poker_admin_secret', e.target.value);
-                  setAdminSecret(e.target.value);
-                }}
-              />
-              <p className="text-xs text-slate-400 mt-1">密码存在本地浏览器，仅供鉴权使用</p>
-            </div>
-
             {message && (
               <div className="text-sm p-3 bg-blue-50 text-blue-700 rounded-lg">{message}</div>
             )}
 
             <div className="flex gap-3">
               {status.status === 'pending' && (
-                <Button variant="success" onClick={handleStart} className="flex-1">
-                  🚀 开始比赛
-                </Button>
+                <Button variant="success" onClick={handleStart} className="flex-1">开始比赛</Button>
               )}
               {status.status === 'running' && (
-                <Button variant="warning" onClick={handleEnd} className="flex-1">
-                  ⏹️ 结束比赛
-                </Button>
+                <Button variant="warning" onClick={handleEnd} className="flex-1">结束比赛</Button>
               )}
               {status.status === 'settling' && (
-                <Button variant="primary" onClick={handleSettle} className="flex-1">
-                  💰 执行清算
-                </Button>
+                <Button variant="primary" onClick={handleSettle} className="flex-1">执行清算</Button>
               )}
               {status.status === 'completed' && (
-                <Button variant="success" onClick={handleReset} className="flex-1">
-                  🔄 开始新比赛
-                </Button>
+                <Button variant="success" onClick={handleReset} className="flex-1">开始新比赛</Button>
               )}
             </div>
           </div>
         </Card>
 
-        {/* Add Player — pending / running */}
         {(status.status === 'pending' || status.status === 'running') && (
           <Card className="p-6 mb-6">
-            <h2 className="text-lg font-bold text-slate-700 mb-4">➕ 添加玩家</h2>
+            <h2 className="text-lg font-bold text-slate-700 mb-4">添加玩家</h2>
             <form onSubmit={handleAddPlayer} className="flex items-end gap-3 flex-wrap">
               <div className="flex-1 min-w-[140px]">
                 <label className="block text-sm font-medium text-slate-600 mb-1">昵称</label>
@@ -264,7 +259,7 @@ export default function AdminPage() {
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="玩家昵称"
                   value={addForm.nickname}
-                  onChange={e => setAddForm({...addForm, nickname: e.target.value})}
+                  onChange={e => setAddForm({ ...addForm, nickname: e.target.value })}
                   required
                 />
               </div>
@@ -275,21 +270,20 @@ export default function AdminPage() {
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="0"
                   value={addForm.initial_chips}
-                  onChange={e => setAddForm({...addForm, initial_chips: e.target.value})}
+                  onChange={e => setAddForm({ ...addForm, initial_chips: e.target.value })}
                   required
                 />
               </div>
               <Button variant="success" type="submit" className="mb-0">添加</Button>
             </form>
             {addMsg && (
-              <div className={`text-sm mt-3 p-3 rounded-lg ${addMsg.includes('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+              <div className={`text-sm mt-3 p-3 rounded-lg ${addMsg.includes('成功') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
                 {addMsg}
               </div>
             )}
           </Card>
         )}
 
-        {/* Stats Summary */}
         {players.length > 0 && (
           <Card className="p-6 mb-6">
             <div className="grid grid-cols-3 gap-4 text-center">
@@ -309,13 +303,10 @@ export default function AdminPage() {
           </Card>
         )}
 
-        {/* Players List */}
         <Card className="mb-6">
           <div className="p-6">
-            <h2 className="text-lg font-bold text-slate-700 mb-4">
-              👥 参与者 ({players.length})
-            </h2>
-            
+            <h2 className="text-lg font-bold text-slate-700 mb-4">参与者 ({players.length})</h2>
+
             {players.length === 0 ? (
               <div className="text-center text-slate-400 py-8">暂无参与者</div>
             ) : (
@@ -324,33 +315,45 @@ export default function AdminPage() {
                   const totalSettlement = p.initial_chips * (status.chip_rate || 10);
                   const isLeft = !!p.left_at;
                   return (
-                    <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl ${isLeft ? 'bg-amber-50 border border-amber-100' : 'bg-slate-50'}`}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
-                          {sanitizeText(p.nickname).charAt(0)}
+                    <div key={p.id} className={`p-3 rounded-xl ${isLeft ? 'bg-amber-50 border border-amber-100' : 'bg-slate-50'}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
+                            {sanitizeText(p.nickname).charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-medium text-slate-800">
+                              {sanitizeText(p.nickname)}
+                              {isLeft && <span className="ml-2 text-xs text-amber-600 font-normal">(已离场)</span>}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {p.name !== p.nickname ? `${p.name} · ` : ''}
+                              入场 {p.initial_chips} 筹码 · 结算 {totalSettlement.toFixed(2)} 元
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="font-medium text-slate-800">
-                            {sanitizeText(p.nickname)}
-                            {isLeft && <span className="ml-2 text-xs text-amber-600 font-normal">(已离场)</span>}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {p.name !== p.nickname ? p.name + ' · ' : ''}
-                            入场 {p.initial_chips} 筹码 · 结算 {totalSettlement.toFixed(2)} 元
-                          </div>
+                        <div className="flex items-center gap-2">
+                          {p.final_chips !== null && (
+                            <span className="text-sm text-slate-500">剩余 {p.final_chips}</span>
+                          )}
+                          <button onClick={() => handleDelete(p.id)} className="text-red-400 hover:text-red-600 px-2">
+                            删除
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {p.final_chips !== null && (
-                          <span className="text-sm text-slate-500">剩余 {p.final_chips}</span>
-                        )}
-                        <button
-                          onClick={() => handleDelete(p.id)}
-                          className="text-red-400 hover:text-red-600 px-2"
-                        >
-                          🗑️
-                        </button>
-                      </div>
+
+                      {status.status === 'running' && !isLeft && (
+                        <div className="mt-3 flex items-center gap-2">
+                          <input
+                            type="number"
+                            placeholder="补筹码"
+                            className="w-32 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm"
+                            value={chipAdds[p.id] || ''}
+                            onChange={e => setChipAdds({ ...chipAdds, [p.id]: e.target.value })}
+                          />
+                          <Button variant="ghost" size="sm" onClick={() => handleAddChips(p.id)}>添加筹码</Button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -359,24 +362,21 @@ export default function AdminPage() {
           </div>
         </Card>
 
-        {/* Settling Progress */}
         {status.status === 'settling' && progress && (
           <Card className="mb-6">
             <div className="p-6">
-              <h2 className="text-lg font-bold text-slate-700 mb-4">
-                📊 提交进度 ({progress.submitted_count}/{progress.total})
-              </h2>
-              
+              <h2 className="text-lg font-bold text-slate-700 mb-4">提交进度 ({progress.submitted_count}/{progress.total})</h2>
+
               <div className="w-full bg-slate-100 rounded-full h-3 mb-4">
                 <div
                   className="bg-blue-500 h-3 rounded-full transition-all"
                   style={{ width: `${progress.total > 0 ? (progress.submitted_count / progress.total) * 100 : 0}%` }}
-                ></div>
+                />
               </div>
 
               {progress.pending.length > 0 && (
                 <div className="mt-4 space-y-3">
-                  <h3 className="text-sm font-semibold text-slate-600">⚠️ 待提交（管理员可补录）</h3>
+                  <h3 className="text-sm font-semibold text-slate-600">待提交（可直接补录）</h3>
                   {progress.pending.map(p => (
                     <div key={p.id} className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl">
                       <span className="font-medium text-amber-700">{sanitizeText(p.nickname)}</span>
@@ -387,11 +387,7 @@ export default function AdminPage() {
                         value={manualFinal[p.id] || ''}
                         onChange={e => setManualFinal({ ...manualFinal, [p.id]: e.target.value })}
                       />
-                      <Button
-                        variant="warning"
-                        className="px-3 py-1 text-sm"
-                        onClick={() => handleManualFinal(p.id)}
-                      >
+                      <Button variant="warning" className="px-3 py-1 text-sm" onClick={() => handleManualFinal(p.id)}>
                         补录
                       </Button>
                     </div>
@@ -401,7 +397,7 @@ export default function AdminPage() {
 
               {progress.submitted.length > 0 && (
                 <div className="mt-4 space-y-2">
-                  <h3 className="text-sm font-semibold text-slate-600">✅ 已提交</h3>
+                  <h3 className="text-sm font-semibold text-slate-600">已提交</h3>
                   {progress.submitted.map((p, i) => (
                     <div key={p.id} className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl">
                       <div className="flex items-center gap-3">
@@ -418,11 +414,10 @@ export default function AdminPage() {
           </Card>
         )}
 
-        {/* Rankings */}
         {rankings && (
           <Card>
             <div className="p-6">
-              <h2 className="text-lg font-bold text-slate-700 mb-4">🏆 最终排名</h2>
+              <h2 className="text-lg font-bold text-slate-700 mb-4">最终排名</h2>
               <div className="space-y-2">
                 {rankings.map((p, i) => (
                   <div

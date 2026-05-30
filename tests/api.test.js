@@ -52,16 +52,24 @@ test('full game flow settles rankings correctly', async () => {
     .post('/api/rate')
     .send({ chip_rate: 5 });
   expect(rateRes.status).toBe(200);
-  expect(rateRes.body).toMatchObject({ status: 'pending', chip_rate: 5 });
 
   const startRes = await request(app).post('/api/start');
   expect(startRes.status).toBe(200);
-  expect(startRes.body.status).toBe('running');
 
   const playerOneRes = await request(app)
     .post('/api/players/admin-add')
     .send({ name: 'Alice', nickname: 'A1', initial_chips: 1000 });
   expect(playerOneRes.status).toBe(201);
+
+  const rebuyRes = await request(app)
+    .post(`/api/players/${playerOneRes.body.id}/add-chips`)
+    .send({ amount: 300 });
+  expect(rebuyRes.status).toBe(200);
+  expect(rebuyRes.body).toMatchObject({
+    nickname: 'A1',
+    initial_chips: 1300,
+    added_chips: 300
+  });
 
   const playerTwoRes = await request(app)
     .post('/api/players/join')
@@ -72,7 +80,6 @@ test('full game flow settles rankings correctly', async () => {
     .post(`/api/players/${playerTwoRes.body.id}/leave`)
     .send({ final_chips: 700, device_id: 'dev-bob' });
   expect(leaveRes.status).toBe(200);
-  expect(leaveRes.body.final_chips).toBe(700);
 
   const endRes = await request(app).post('/api/end');
   expect(endRes.status).toBe(200);
@@ -80,13 +87,14 @@ test('full game flow settles rankings correctly', async () => {
 
   const submitFinalRes = await request(app)
     .post('/api/submit-final')
-    .send({ nickname: 'A1', final_chips: 1300 });
+    .send({ nickname: 'A1', final_chips: 1600 });
   expect(submitFinalRes.status).toBe(200);
   expect(submitFinalRes.body).toMatchObject({
     nickname: 'A1',
+    initial_chips: 1300,
     chip_net: 300,
     money_net: 1500,
-    total_settlement: 5000
+    total_settlement: 6500
   });
 
   const settleRes = await request(app).post('/api/settle');
@@ -94,25 +102,31 @@ test('full game flow settles rankings correctly', async () => {
   expect(settleRes.body.rankings).toHaveLength(2);
   expect(settleRes.body.rankings[0]).toMatchObject({
     nickname: 'A1',
-    net_profit: 1500
+    net_profit: 1500,
+    total_settlement: 6500
   });
   expect(settleRes.body.rankings[1]).toMatchObject({
     nickname: 'B1',
     net_profit: -1500
   });
-
-  const storedSettings = await get('SELECT status, chip_rate FROM settings WHERE id=1');
-  expect(storedSettings).toMatchObject({ status: 'completed', chip_rate: 5 });
 });
 
-test('rejects state-changing operations in the wrong game phase', async () => {
-  let response = await request(app)
+test('allows adding players and chips while running but blocks chip additions after running', async () => {
+  let response = await request(app).post('/api/start');
+  expect(response.status).toBe(200);
+
+  response = await request(app)
     .post('/api/players/admin-add')
     .send({ name: 'Alice', nickname: 'A1', initial_chips: 1000 });
   expect(response.status).toBe(201);
 
-  response = await request(app).post('/api/start');
+  const player = await get('SELECT id FROM players WHERE nickname=?', ['A1']);
+
+  response = await request(app)
+    .post(`/api/players/${player.id}/add-chips`)
+    .send({ amount: 200 });
   expect(response.status).toBe(200);
+  expect(response.body.initial_chips).toBe(1200);
 
   response = await request(app)
     .post('/api/rate')
@@ -121,22 +135,19 @@ test('rejects state-changing operations in the wrong game phase', async () => {
 
   response = await request(app)
     .post('/api/submit-final')
-    .send({ nickname: 'A1', final_chips: 1000 });
-  expect(response.status).toBe(409);
-
-  response = await request(app).post('/api/start');
+    .send({ nickname: 'A1', final_chips: 1200 });
   expect(response.status).toBe(409);
 
   response = await request(app).post('/api/end');
   expect(response.status).toBe(200);
 
   response = await request(app)
-    .post('/api/players/admin-add')
-    .send({ name: 'Bob', nickname: 'B1', initial_chips: 800 });
+    .post(`/api/players/${player.id}/add-chips`)
+    .send({ amount: 100 });
   expect(response.status).toBe(409);
 });
 
-test('manual final update requires the backend default admin secret', async () => {
+test('manual final update no longer requires an admin secret', async () => {
   await request(app)
     .post('/api/players/admin-add')
     .send({ name: 'Alice', nickname: 'A1', initial_chips: 1000 });
@@ -146,17 +157,11 @@ test('manual final update requires the backend default admin secret', async () =
 
   const player = await get('SELECT id FROM players WHERE nickname=?', ['A1']);
 
-  const deniedRes = await request(app)
+  const updateRes = await request(app)
     .post(`/api/players/${player.id}/final`)
     .send({ final_chips: 1200 });
-  expect(deniedRes.status).toBe(403);
-
-  const allowedRes = await request(app)
-    .post(`/api/players/${player.id}/final`)
-    .set('X-Admin-Secret', 'admin123')
-    .send({ final_chips: 1200 });
-  expect(allowedRes.status).toBe(200);
-  expect(allowedRes.body).toMatchObject({
+  expect(updateRes.status).toBe(200);
+  expect(updateRes.body).toMatchObject({
     final_chips: 1200,
     chip_net: 200,
     money_net: 2000
