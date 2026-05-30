@@ -336,6 +336,23 @@ export default function AdminPage() {
                           {p.final_chips !== null && (
                             <span className="text-sm text-slate-500">剩余 {p.final_chips}</span>
                           )}
+                          {status.status === 'settling' && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                placeholder="补录筹码"
+                                className="w-24 px-2 py-1 bg-white border border-slate-200 rounded-lg text-sm"
+                                value={manualFinal[p.id] || ''}
+                                onChange={e => setManualFinal({ ...manualFinal, [p.id]: e.target.value })}
+                              />
+                              <button
+                                onClick={() => handleManualFinal(p.id)}
+                                className="text-blue-500 hover:text-blue-700 text-sm font-medium px-2"
+                              >
+                                补录
+                              </button>
+                            </div>
+                          )}
                           <button onClick={() => handleDelete(p.id)} className="text-red-400 hover:text-red-600 px-2">
                             删除
                           </button>
