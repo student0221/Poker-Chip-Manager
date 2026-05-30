@@ -17,7 +17,7 @@ db.serialize(() => {
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       status TEXT NOT NULL DEFAULT 'pending',
-      chip_rate REAL NOT NULL DEFAULT 10,
+      chip_rate REAL NOT NULL DEFAULT 0.05,
       created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
       updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
     )
@@ -70,7 +70,7 @@ db.serialize(() => {
 
   db.get('SELECT id FROM settings WHERE id = 1', (err, row) => {
     if (!row) {
-      db.run('INSERT INTO settings (id, status, chip_rate) VALUES (1, ?, ?)', ['pending', 10]);
+      db.run('INSERT INTO settings (id, status, chip_rate) VALUES (1, ?, ?)', ['pending', 0.05]);
     }
   });
 });

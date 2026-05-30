@@ -9,7 +9,7 @@ function getSettings(callback) {
 router.get('/status', (req, res) => {
   getSettings((err, row) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(row || { status: 'pending', chip_rate: 10 });
+    res.json(row || { status: 'pending', chip_rate: 0.05 });
   });
 });
 
@@ -77,9 +77,9 @@ router.post('/reset', (req, res) => {
   
   db.run('DELETE FROM players', (err) => {
     if (err) return res.status(500).json({ error: err.message });
-    db.run("UPDATE settings SET status='pending', chip_rate=10, updated_at=? WHERE id=1", [Date.now()], (err) => {
+    db.run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=? WHERE id=1", [Date.now()], (err) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json({ status: 'pending', chip_rate: 10, message: '已重置，可以开始新比赛' });
+      res.json({ status: 'pending', chip_rate: 0.05, message: '已重置，可以开始新比赛' });
     });
   });
 });

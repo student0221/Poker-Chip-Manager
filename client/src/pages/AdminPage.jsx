@@ -314,7 +314,7 @@ export default function AdminPage() {
             ) : (
               <div className="space-y-2">
                 {players.map(p => {
-                  const totalSettlement = p.initial_chips * (status.chip_rate || 10);
+                  const totalSettlement = p.initial_chips * (status.chip_rate || 0.05);
                   const isLeft = !!p.left_at;
                   return (
                     <div key={p.id} className={`p-3 rounded-xl ${isLeft ? 'bg-amber-50 border border-amber-100' : 'bg-slate-50'}`}>

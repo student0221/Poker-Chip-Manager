@@ -31,7 +31,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await run('DELETE FROM players');
-  await run("UPDATE settings SET status='pending', chip_rate=10, updated_at=?", [Date.now()]);
+  await run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=?", [Date.now()]);
 });
 
 afterAll(async () => {
@@ -46,7 +46,7 @@ afterAll(async () => {
 test('full game flow settles rankings correctly', async () => {
   const statusRes = await request(app).get('/api/status');
   expect(statusRes.status).toBe(200);
-  expect(statusRes.body).toMatchObject({ status: 'pending', chip_rate: 10 });
+  expect(statusRes.body).toMatchObject({ status: 'pending', chip_rate: 0.05 });
 
   const rateRes = await request(app)
     .post('/api/rate')
@@ -164,6 +164,6 @@ test('manual final update no longer requires an admin secret', async () => {
   expect(updateRes.body).toMatchObject({
     final_chips: 1200,
     chip_net: 200,
-    money_net: 2000
+    money_net: 10
   });
 });

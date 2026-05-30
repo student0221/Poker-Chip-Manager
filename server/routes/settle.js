@@ -172,7 +172,7 @@ router.get('/rankings', (req, res) => {
       if (settingsErr) return res.status(500).json({ error: settingsErr.message });
       const enriched = (rows || []).map(r => ({
         ...r,
-        total_settlement: r.initial_chips * (settings?.chip_rate || 10)
+        total_settlement: r.initial_chips * (settings?.chip_rate || 0.05)
       }));
       res.json({ rankings: enriched });
     });
