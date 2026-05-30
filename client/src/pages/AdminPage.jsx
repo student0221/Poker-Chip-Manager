@@ -248,9 +248,11 @@ export default function AdminPage() {
           </div>
         </Card>
 
-        {(status.status === 'pending' || status.status === 'running') && (
+        {(status.status === 'pending' || status.status === 'running' || status.status === 'settling') && (
           <Card className="p-6 mb-6">
-            <h2 className="text-lg font-bold text-slate-700 mb-4">添加玩家</h2>
+            <h2 className="text-lg font-bold text-slate-700 mb-4">
+              {status.status === 'settling' ? '补录玩家' : '添加玩家'}
+            </h2>
             <form onSubmit={handleAddPlayer} className="flex items-end gap-3 flex-wrap">
               <div className="flex-1 min-w-[140px]">
                 <label className="block text-sm font-medium text-slate-600 mb-1">昵称</label>

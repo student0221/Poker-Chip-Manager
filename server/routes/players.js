@@ -63,8 +63,8 @@ router.post('/players/join', (req, res) => {
 router.post('/players/admin-add', (req, res) => {
   getSettings((err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
-    if (!settings || !['pending', 'running'].includes(settings.status)) {
-      return res.status(409).json({ error: 'Players can only be added before settlement begins', currentStatus: settings?.status || null });
+    if (!settings || !['pending', 'running', 'settling'].includes(settings.status)) {
+      return res.status(409).json({ error: 'Players can only be added before settlement completes', currentStatus: settings?.status || null });
     }
 
     const { name, nickname, initial_chips } = req.body;
