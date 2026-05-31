@@ -32,6 +32,9 @@ beforeAll(async () => {
 beforeEach(async () => {
   await run('DELETE FROM players');
   await run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=?", [Date.now()]);
+  delete process.env.PUBLIC_URL;
+  delete process.env.PUBLIC_PORT;
+  delete process.env.PORT;
 });
 
 afterAll(async () => {
@@ -166,4 +169,35 @@ test('manual final update no longer requires an admin secret', async () => {
     chip_net: 200,
     money_net: 10
   });
+});
+
+test('returns LAN network info and ignores host header port by default', async () => {
+  const res = await request(app)
+    .get('/api/network-info')
+    .set('Host', 'localhost:5173');
+  expect(res.status).toBe(200);
+  expect(res.body).toEqual(
+    expect.objectContaining({
+      ip: expect.any(String),
+      port: expect.any(Number),
+      url: expect.any(String)
+    })
+  );
+  expect(res.body.port).toBe(3000);
+  expect(res.body.url).toContain('/#/');
+  expect(res.body.url).toContain(`:${res.body.port}`);
+});
+
+test('supports PUBLIC_PORT and PUBLIC_URL overrides for network info', async () => {
+  process.env.PUBLIC_PORT = '4100';
+  let res = await request(app).get('/api/network-info');
+  expect(res.status).toBe(200);
+  expect(res.body.port).toBe(4100);
+  expect(res.body.url).toContain(':4100/#/');
+
+  process.env.PUBLIC_URL = 'https://poker.example.com/#/';
+  res = await request(app).get('/api/network-info');
+  expect(res.status).toBe(200);
+  expect(res.body.url).toBe('https://poker.example.com/#/');
+  expect(res.body.port).toBeNull();
 });

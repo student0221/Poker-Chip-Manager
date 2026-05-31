@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { getStatus, getPlayers, deletePlayer, getSettleProgress, adminAddPlayer } from '../api';
+import { getStatus, getPlayers, deletePlayer, getSettleProgress, adminAddPlayer, getNetworkInfo } from '../api';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import StatusBadge from '../components/StatusBadge';
@@ -23,6 +23,7 @@ export default function AdminPage() {
   const [manualFinal, setManualFinal] = useState({});
   const [chipAdds, setChipAdds] = useState({});
   const [message, setMessage] = useState('');
+  const [networkInfo, setNetworkInfo] = useState(null);
 
   const refresh = async () => {
     const [s, p] = await Promise.all([getStatus(), getPlayers()]);
@@ -44,6 +45,12 @@ export default function AdminPage() {
     refresh();
     const interval = setInterval(refresh, 8000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    getNetworkInfo().then(setNetworkInfo).catch(() => {
+      setNetworkInfo(null);
+    });
   }, []);
 
   // 执行清算后自动播放颁奖动画
@@ -223,6 +230,22 @@ export default function AdminPage() {
             <StatusBadge status={status.status} />
           </div>
         </div>
+
+        {networkInfo?.url && (
+          <Card className="p-4 mb-6">
+            <div className="text-sm text-slate-600">
+              局域网加入地址：
+              <a
+                href={networkInfo.url}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-2 text-blue-600 underline break-all"
+              >
+                {networkInfo.url}
+              </a>
+            </div>
+          </Card>
+        )}
 
         <Card className="p-6 mb-6">
           <h2 className="text-lg font-bold text-slate-700 mb-4">比赛控制</h2>

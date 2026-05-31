@@ -15,6 +15,12 @@ export async function getStatus() {
   return res.json();
 }
 
+export async function getNetworkInfo() {
+  const res = await fetch(`${API_BASE}/api/network-info`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function submitPlayer(data) {
   let body;
   let headers = {};

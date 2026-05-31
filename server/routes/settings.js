@@ -1,10 +1,44 @@
 const express = require('express');
 const router = express.Router();
+const os = require('os');
 const db = require('../db');
 
 function getSettings(callback) {
   db.get('SELECT status, chip_rate FROM settings WHERE id=1', callback);
 }
+
+function getLanIpv4() {
+  const interfaces = os.networkInterfaces();
+  for (const entries of Object.values(interfaces)) {
+    if (!entries) continue;
+    for (const detail of entries) {
+      const family = typeof detail.family === 'string' ? detail.family : String(detail.family);
+      if (family === 'IPv4' && !detail.internal) {
+        return detail.address;
+      }
+    }
+  }
+  return '127.0.0.1';
+}
+
+router.get('/network-info', (req, res) => {
+  if (process.env.PUBLIC_URL) {
+    return res.json({
+      ip: getLanIpv4(),
+      port: null,
+      url: process.env.PUBLIC_URL
+    });
+  }
+
+  const ip = getLanIpv4();
+  const port = Number(process.env.PUBLIC_PORT || process.env.PORT || 3000);
+  const url = `http://${ip}:${port}/#/`;
+  res.json({
+    ip,
+    port,
+    url
+  });
+});
 
 router.get('/status', (req, res) => {
   getSettings((err, row) => {
