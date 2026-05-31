@@ -389,7 +389,7 @@ export default function PlayerPage() {
                     <div className="flex-grow">
                       <div className="font-bold text-slate-800">{sanitizeText(p.nickname)}</div>
                       <div className="text-xs text-slate-500">
-                        入场 {p.initial_chips} 筹码 · 结算 {(p.total_settlement ?? 0).toFixed(2)} 元
+                        入场 {p.initial_chips} 筹码 · 离场 {p.final_chips ?? 0} 筹码 · 离场价值 {(p.final_settlement ?? 0).toFixed(2)} 元
                       </div>
                     </div>
                     <div className="text-right">

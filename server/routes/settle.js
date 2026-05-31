@@ -158,7 +158,8 @@ router.post('/settle', (req, res) => {
               db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit FROM players WHERE deleted_at IS NULL ORDER BY net_profit DESC', (err, rankings) => {
                 const enriched = (rankings || []).map(r => ({
                   ...r,
-                  total_settlement: r.initial_chips * settings.chip_rate
+                  total_settlement: r.initial_chips * settings.chip_rate,
+                  final_settlement: (r.final_chips ?? 0) * settings.chip_rate
                 }));
                 res.json({ rankings: enriched });
               });
@@ -175,9 +176,11 @@ router.get('/rankings', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     db.get('SELECT chip_rate FROM settings WHERE id=1', (settingsErr, settings) => {
       if (settingsErr) return res.status(500).json({ error: settingsErr.message });
+      const chipRate = settings?.chip_rate || 0.05;
       const enriched = (rows || []).map(r => ({
         ...r,
-        total_settlement: r.initial_chips * (settings?.chip_rate || 0.05)
+        total_settlement: r.initial_chips * chipRate,
+        final_settlement: (r.final_chips ?? 0) * chipRate
       }));
       res.json({ rankings: enriched });
     });
