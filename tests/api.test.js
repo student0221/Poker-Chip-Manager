@@ -32,6 +32,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await run('DELETE FROM players');
   await run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=?", [Date.now()]);
+  await run("UPDATE rooms SET status='pending', chip_rate=0.05, updated_at=? WHERE id='default'", [Date.now()]);
   delete process.env.PUBLIC_URL;
   delete process.env.PUBLIC_PORT;
   delete process.env.PORT;
@@ -200,4 +201,27 @@ test('supports PUBLIC_PORT and PUBLIC_URL overrides for network info', async () 
   expect(res.status).toBe(200);
   expect(res.body.url).toBe('https://poker.example.com/#/');
   expect(res.body.port).toBeNull();
+});
+
+test('keeps legacy API mapped to the default room data model', async () => {
+  let defaultRoom = await get('SELECT id, status, chip_rate FROM rooms WHERE id=?', ['default']);
+  expect(defaultRoom).toMatchObject({ id: 'default', status: 'pending', chip_rate: 0.05 });
+
+  await request(app)
+    .post('/api/rate')
+    .send({ chip_rate: 2 });
+  defaultRoom = await get('SELECT status, chip_rate FROM rooms WHERE id=?', ['default']);
+  expect(defaultRoom).toMatchObject({ status: 'pending', chip_rate: 2 });
+
+  await request(app).post('/api/start');
+  defaultRoom = await get('SELECT status, chip_rate FROM rooms WHERE id=?', ['default']);
+  expect(defaultRoom).toMatchObject({ status: 'running', chip_rate: 2 });
+
+  const playerRes = await request(app)
+    .post('/api/players/join')
+    .send({ name: 'Charlie', nickname: 'C1', initial_chips: 500, device_id: 'dev-charlie' });
+  expect(playerRes.status).toBe(201);
+
+  const player = await get('SELECT nickname, room_id FROM players WHERE id=?', [playerRes.body.id]);
+  expect(player).toMatchObject({ nickname: 'C1', room_id: 'default' });
 });

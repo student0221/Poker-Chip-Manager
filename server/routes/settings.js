@@ -2,9 +2,30 @@ const express = require('express');
 const router = express.Router();
 const os = require('os');
 const db = require('../db');
+const { DEFAULT_ROOM_ID } = require('../constants');
 
 function getSettings(callback) {
   db.get('SELECT status, chip_rate FROM settings WHERE id=1', callback);
+}
+
+function syncDefaultRoom(fields, callback) {
+  const updates = [];
+  const values = [];
+
+  if (fields.status !== undefined) {
+    updates.push('status=?');
+    values.push(fields.status);
+  }
+  if (fields.chip_rate !== undefined) {
+    updates.push('chip_rate=?');
+    values.push(fields.chip_rate);
+  }
+
+  if (updates.length === 0) return callback();
+
+  updates.push('updated_at=?');
+  values.push(Date.now(), DEFAULT_ROOM_ID);
+  db.run(`UPDATE rooms SET ${updates.join(', ')} WHERE id=?`, values, callback);
 }
 
 function getLanIpv4() {
@@ -56,9 +77,12 @@ router.post('/start', (req, res) => {
 
     db.run("UPDATE settings SET status='running', updated_at=? WHERE id=1", [Date.now()], function(runErr) {
       if (runErr) return res.status(500).json({ error: runErr.message });
-      getSettings((getErr, nextRow) => {
-        if (getErr) return res.status(500).json({ error: getErr.message });
-        res.json(nextRow);
+      syncDefaultRoom({ status: 'running' }, (syncErr) => {
+        if (syncErr) return res.status(500).json({ error: syncErr.message });
+        getSettings((getErr, nextRow) => {
+          if (getErr) return res.status(500).json({ error: getErr.message });
+          res.json(nextRow);
+        });
       });
     });
   });
@@ -73,9 +97,12 @@ router.post('/end', (req, res) => {
 
     db.run("UPDATE settings SET status='settling', updated_at=? WHERE id=1", [Date.now()], function(runErr) {
       if (runErr) return res.status(500).json({ error: runErr.message });
-      getSettings((getErr, nextRow) => {
-        if (getErr) return res.status(500).json({ error: getErr.message });
-        res.json(nextRow);
+      syncDefaultRoom({ status: 'settling' }, (syncErr) => {
+        if (syncErr) return res.status(500).json({ error: syncErr.message });
+        getSettings((getErr, nextRow) => {
+          if (getErr) return res.status(500).json({ error: getErr.message });
+          res.json(nextRow);
+        });
       });
     });
   });
@@ -95,9 +122,12 @@ router.post('/rate', (req, res) => {
 
     db.run('UPDATE settings SET chip_rate=?, updated_at=? WHERE id=1', [chip_rate, Date.now()], function(runErr) {
       if (runErr) return res.status(500).json({ error: runErr.message });
-      getSettings((getErr, nextRow) => {
-        if (getErr) return res.status(500).json({ error: getErr.message });
-        res.json(nextRow);
+      syncDefaultRoom({ chip_rate }, (syncErr) => {
+        if (syncErr) return res.status(500).json({ error: syncErr.message });
+        getSettings((getErr, nextRow) => {
+          if (getErr) return res.status(500).json({ error: getErr.message });
+          res.json(nextRow);
+        });
       });
     });
   });
@@ -108,12 +138,15 @@ router.post('/reset', (req, res) => {
   if (!confirm || confirm !== 'RESET_ALL_PLAYERS') {
     return res.status(400).json({ error: '缺少确认参数' });
   }
-  
+
   db.run('DELETE FROM players', (err) => {
     if (err) return res.status(500).json({ error: err.message });
-    db.run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=? WHERE id=1", [Date.now()], (err) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ status: 'pending', chip_rate: 0.05, message: '已重置，可以开始新比赛' });
+    db.run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=? WHERE id=1", [Date.now()], (settingsErr) => {
+      if (settingsErr) return res.status(500).json({ error: settingsErr.message });
+      syncDefaultRoom({ status: 'pending', chip_rate: 0.05 }, (syncErr) => {
+        if (syncErr) return res.status(500).json({ error: syncErr.message });
+        res.json({ status: 'pending', chip_rate: 0.05, message: '已重置，可以开始新比赛' });
+      });
     });
   });
 });
