@@ -3,7 +3,11 @@ const router = express.Router();
 const db = require('../db');
 
 router.post('/players/:id/final', (req, res) => {
-  const { final_chips } = req.body;
+  const { final_chips, admin_secret } = req.body;
+  const expected = process.env.ADMIN_SECRET || 'admin123';
+  if (admin_secret !== expected) {
+    return res.status(403).json({ error: 'Unauthorized: invalid admin_secret' });
+  }
   const id = req.params.id;
 
   db.get('SELECT chip_rate, status FROM settings WHERE id=1', (err, settings) => {

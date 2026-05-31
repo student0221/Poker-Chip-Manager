@@ -33,6 +33,7 @@ db.serialize(() => {
       net_profit REAL DEFAULT NULL,
       device_id TEXT,
       left_at INTEGER DEFAULT NULL,
+      deleted_at INTEGER DEFAULT NULL,
       created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
     )
   `);
