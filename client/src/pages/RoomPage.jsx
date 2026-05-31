@@ -20,6 +20,7 @@ import {
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import Card from '../components/Card';
+import InviteQRCode from '../components/InviteQRCode';
 import Input from '../components/Input';
 import ProfitDisplay from '../components/ProfitDisplay';
 import StatusBadge from '../components/StatusBadge';
@@ -169,6 +170,9 @@ export default function RoomPage() {
           <Card className="p-4 max-w-md">
             <div className="text-sm font-semibold text-slate-700 mb-1">邀请链接</div>
             <a className="text-sm text-blue-600 underline break-all" href={shareUrl} target="_blank" rel="noreferrer">{shareUrl}</a>
+            <div className="mt-3">
+              <InviteQRCode value={shareUrl} label="扫码进入房间" size={132} />
+            </div>
           </Card>
         </div>
 

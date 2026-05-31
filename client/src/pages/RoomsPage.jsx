@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { createRoom, getDeviceId, getDiscoveredHosts, getNetworkInfo, getRooms } from '../api';
 import Button from '../components/Button';
 import Card from '../components/Card';
+import InviteQRCode from '../components/InviteQRCode';
 import Input from '../components/Input';
 import StatusBadge from '../components/StatusBadge';
 
@@ -136,9 +137,12 @@ export default function RoomsPage() {
                         <div className="text-xs text-slate-400 mt-1 break-all">{roomUrl(networkInfo.url, room.id)}</div>
                       )}
                     </div>
-                    <Link to={`/room/${room.id}`}>
-                      <Button variant="primary">进入</Button>
-                    </Link>
+                    <div className="flex items-center gap-3">
+                      {networkInfo?.url && <InviteQRCode value={roomUrl(networkInfo.url, room.id)} label="扫码加入" size={96} />}
+                      <Link to={`/room/${room.id}`}>
+                        <Button variant="primary">进入</Button>
+                      </Link>
+                    </div>
                   </div>
                 </div>
               ))}
