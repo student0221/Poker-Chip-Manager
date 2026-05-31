@@ -4,3 +4,6 @@ client/dist/
 *.db
 .DS_Store
 .env
+
+# Uploaded avatars
+server/uploads/avatars/

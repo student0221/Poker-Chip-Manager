@@ -37,12 +37,12 @@ export default function Avatar({ nickname, src, size = 'md', className = '' }) {
   const colorClass = getNicknameColor(nickname || '?');
 
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-block group">
       {src && (
         <img
           src={src}
           alt={nickname}
-          className={`${sizeClass} rounded-full object-cover border border-slate-200 ${className}`}
+          className={`${sizeClass} rounded-full object-cover border border-slate-200 transition-transform duration-200 group-hover:scale-110 ${className}`}
           onError={(e) => {
             e.target.style.display = 'none';
             const fallback = e.target.nextElementSibling;
@@ -51,7 +51,7 @@ export default function Avatar({ nickname, src, size = 'md', className = '' }) {
         />
       )}
       <div
-        className={`${sizeClass} ${colorClass} rounded-full items-center justify-center font-bold select-none ${className}`}
+        className={`${sizeClass} ${colorClass} rounded-full items-center justify-center font-bold select-none transition-transform duration-200 group-hover:scale-110 ${className}`}
         style={{ display: src ? 'none' : 'flex' }}
       >
         {(nickname || '?').charAt(0).toUpperCase()}
