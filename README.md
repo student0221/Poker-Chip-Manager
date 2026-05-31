@@ -48,6 +48,12 @@ Windows 下也可以直接运行 `start.bat`。脚本会打开房间大厅，并
 
 ## 局域网验收清单
 
+先在主机上运行自动 smoke，确认服务能通过本机局域网地址完成基础房间流程：
+
+```bash
+npm run smoke:lan
+```
+
 在同一个 WiFi 下准备一台主机和至少两台手机/平板：
 
 1. 主机运行 `start.bat` 或 `npm start`，确认终端显示 `http://<局域网IP>:3000/#/rooms`。
