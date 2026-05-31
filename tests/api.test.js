@@ -31,6 +31,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await run('DELETE FROM players');
+  await run("DELETE FROM rooms WHERE id <> 'default'");
   await run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=?", [Date.now()]);
   await run("UPDATE rooms SET status='pending', chip_rate=0.05, updated_at=? WHERE id='default'", [Date.now()]);
   delete process.env.PUBLIC_URL;
@@ -224,4 +225,53 @@ test('keeps legacy API mapped to the default room data model', async () => {
 
   const player = await get('SELECT nickname, room_id FROM players WHERE id=?', [playerRes.body.id]);
   expect(player).toMatchObject({ nickname: 'C1', room_id: 'default' });
+});
+
+test('supports room-scoped APIs without leaking players into legacy default room', async () => {
+  const roomOneRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Table One', chip_rate: 3, device_id: 'host-one' });
+  expect(roomOneRes.status).toBe(201);
+  const roomOne = roomOneRes.body;
+
+  const roomTwoRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Table Two', chip_rate: 7, device_id: 'host-two' });
+  expect(roomTwoRes.status).toBe(201);
+  const roomTwo = roomTwoRes.body;
+
+  let response = await request(app)
+    .post(`/api/rooms/${roomOne.id}/start`)
+    .send({ device_id: 'not-host' });
+  expect(response.status).toBe(403);
+
+  response = await request(app)
+    .post(`/api/rooms/${roomOne.id}/start`)
+    .send({ device_id: 'host-one' });
+  expect(response.status).toBe(200);
+  expect(response.body).toMatchObject({ status: 'running', chip_rate: 3 });
+
+  response = await request(app)
+    .post(`/api/rooms/${roomOne.id}/players/join`)
+    .send({ name: 'Room One Player', nickname: 'R1', initial_chips: 100, device_id: 'device-r1' });
+  expect(response.status).toBe(201);
+  expect(response.body).toMatchObject({ nickname: 'R1', room_id: roomOne.id });
+
+  response = await request(app)
+    .post(`/api/rooms/${roomTwo.id}/players/admin-add`)
+    .send({ name: 'Room Two Player', nickname: 'R2', initial_chips: 200, device_id: 'host-two' });
+  expect(response.status).toBe(201);
+  expect(response.body).toMatchObject({ nickname: 'R2', room_id: roomTwo.id });
+
+  const roomOnePlayers = await request(app).get(`/api/rooms/${roomOne.id}/players`);
+  expect(roomOnePlayers.status).toBe(200);
+  expect(roomOnePlayers.body.map(p => p.nickname)).toEqual(['R1']);
+
+  const roomTwoPlayers = await request(app).get(`/api/rooms/${roomTwo.id}/players`);
+  expect(roomTwoPlayers.status).toBe(200);
+  expect(roomTwoPlayers.body.map(p => p.nickname)).toEqual(['R2']);
+
+  const legacyPlayers = await request(app).get('/api/players');
+  expect(legacyPlayers.status).toBe(200);
+  expect(legacyPlayers.body).toEqual([]);
 });

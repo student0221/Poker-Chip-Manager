@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { upload } = require('../multerConfig');
+const { DEFAULT_ROOM_ID } = require('../constants');
 
 function getSettings(callback) {
   db.get('SELECT status FROM settings WHERE id=1', callback);
@@ -9,9 +10,9 @@ function getSettings(callback) {
 
 function handlePlayerInsert(res, params, avatarPath) {
   const sql = avatarPath
-    ? 'INSERT INTO players (name, nickname, initial_chips, device_id, avatar) VALUES (?, ?, ?, ?, ?)'
-    : 'INSERT INTO players (name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?)';
-  const values = avatarPath ? [...params, avatarPath] : params;
+    ? 'INSERT INTO players (room_id, name, nickname, initial_chips, device_id, avatar) VALUES (?, ?, ?, ?, ?, ?)'
+    : 'INSERT INTO players (room_id, name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?, ?)';
+  const values = avatarPath ? [DEFAULT_ROOM_ID, ...params, avatarPath] : [DEFAULT_ROOM_ID, ...params];
 
   db.run(sql, values, function(err) {
     if (err) {
@@ -20,7 +21,7 @@ function handlePlayerInsert(res, params, avatarPath) {
       }
       return res.status(500).json({ error: err.message });
     }
-    db.get('SELECT * FROM players WHERE id=?', [this.lastID], (getErr, row) => {
+    db.get('SELECT * FROM players WHERE id=? AND room_id=?', [this.lastID, DEFAULT_ROOM_ID], (getErr, row) => {
       if (getErr) return res.status(500).json({ error: getErr.message });
       res.status(201).json(row);
     });
@@ -28,7 +29,7 @@ function handlePlayerInsert(res, params, avatarPath) {
 }
 
 router.get('/players', (req, res) => {
-  db.all('SELECT * FROM players WHERE deleted_at IS NULL ORDER BY created_at', (err, rows) => {
+  db.all('SELECT * FROM players WHERE room_id=? AND deleted_at IS NULL ORDER BY created_at', [DEFAULT_ROOM_ID], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
   });
@@ -50,7 +51,7 @@ router.post('/players/join', upload.single('avatar'), (req, res) => {
     const avatarPath = req.file ? `/uploads/avatars/${req.file.filename}` : null;
 
     if (device_id) {
-      db.get('SELECT id FROM players WHERE device_id = ? AND left_at IS NULL AND deleted_at IS NULL', [device_id], (deviceErr, row) => {
+      db.get('SELECT id FROM players WHERE room_id=? AND device_id = ? AND left_at IS NULL AND deleted_at IS NULL', [DEFAULT_ROOM_ID, device_id], (deviceErr, row) => {
         if (deviceErr) return res.status(500).json({ error: deviceErr.message });
         if (row) {
           return res.status(409).json({ error: 'This device has already joined the current game' });
@@ -86,9 +87,9 @@ router.post('/players/:id/avatar', upload.single('avatar'), (req, res) => {
     return res.status(400).json({ error: 'No avatar file uploaded' });
   }
   const avatarPath = `/uploads/avatars/${req.file.filename}`;
-  db.run('UPDATE players SET avatar = ? WHERE id = ?', [avatarPath, req.params.id], function(err) {
+  db.run('UPDATE players SET avatar = ? WHERE id = ? AND room_id=?', [avatarPath, req.params.id, DEFAULT_ROOM_ID], function(err) {
     if (err) return res.status(500).json({ error: err.message });
-    db.get('SELECT * FROM players WHERE id = ?', [req.params.id], (getErr, row) => {
+    db.get('SELECT * FROM players WHERE id = ? AND room_id=?', [req.params.id, DEFAULT_ROOM_ID], (getErr, row) => {
       if (getErr) return res.status(500).json({ error: getErr.message });
       res.json(row);
     });
@@ -109,15 +110,15 @@ router.post('/players/:id/add-chips', (req, res) => {
       return res.status(409).json({ error: 'Chips can only be added while the game is running', currentStatus: settings?.status || null });
     }
 
-    db.get('SELECT * FROM players WHERE id=? AND deleted_at IS NULL', [id], (err, player) => {
+    db.get('SELECT * FROM players WHERE id=? AND room_id=? AND deleted_at IS NULL', [id, DEFAULT_ROOM_ID], (err, player) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!player) return res.status(404).json({ error: 'Player not found' });
       if (player.left_at) return res.status(409).json({ error: 'Cannot add chips after the player has left' });
 
       const nextInitialChips = player.initial_chips + amount;
-      db.run('UPDATE players SET initial_chips=? WHERE id=?', [nextInitialChips, id], function(runErr) {
+      db.run('UPDATE players SET initial_chips=? WHERE id=? AND room_id=?', [nextInitialChips, id, DEFAULT_ROOM_ID], function(runErr) {
         if (runErr) return res.status(500).json({ error: runErr.message });
-        db.get('SELECT * FROM players WHERE id=?', [id], (getErr, row) => {
+        db.get('SELECT * FROM players WHERE id=? AND room_id=?', [id, DEFAULT_ROOM_ID], (getErr, row) => {
           if (getErr) return res.status(500).json({ error: getErr.message });
           res.json({
             ...row,
@@ -144,7 +145,7 @@ router.post('/players/:id/leave', (req, res) => {
       return res.status(409).json({ error: 'Players can only leave while the game is running', currentStatus: settings?.status || null });
     }
 
-    db.get('SELECT * FROM players WHERE id=? AND deleted_at IS NULL', [id], (err, player) => {
+    db.get('SELECT * FROM players WHERE id=? AND room_id=? AND deleted_at IS NULL', [id, DEFAULT_ROOM_ID], (err, player) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!player) return res.status(404).json({ error: 'Player not found' });
       if (player.left_at) return res.status(409).json({ error: 'Player has already left' });
@@ -153,11 +154,11 @@ router.post('/players/:id/leave', (req, res) => {
       }
 
       db.run(
-        'UPDATE players SET final_chips=?, left_at=? WHERE id=?',
-        [final_chips, Date.now(), id],
+        'UPDATE players SET final_chips=?, left_at=? WHERE id=? AND room_id=?',
+        [final_chips, Date.now(), id, DEFAULT_ROOM_ID],
         function(runErr) {
           if (runErr) return res.status(500).json({ error: runErr.message });
-          db.get('SELECT * FROM players WHERE id=?', [id], (getErr, row) => {
+          db.get('SELECT * FROM players WHERE id=? AND room_id=?', [id, DEFAULT_ROOM_ID], (getErr, row) => {
             if (getErr) return res.status(500).json({ error: getErr.message });
             res.json({
               ...row,
@@ -171,7 +172,7 @@ router.post('/players/:id/leave', (req, res) => {
 });
 
 router.delete('/players/:id', (req, res) => {
-  db.run('UPDATE players SET deleted_at = ? WHERE id=?', [Date.now(), req.params.id], function(err) {
+  db.run('UPDATE players SET deleted_at = ? WHERE id=? AND room_id=?', [Date.now(), req.params.id, DEFAULT_ROOM_ID], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     res.status(200).json({ message: 'Player removed' });
   });
