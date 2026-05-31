@@ -1,5 +1,7 @@
 const express = require('express');
+const http = require('http');
 const path = require('path');
+const { attachSocketServer } = require('./socket');
 const app = express();
 
 app.use(express.json());
@@ -31,7 +33,9 @@ app.get('*', (req, res) => {
 const port = process.env.PORT || 3000;
 
 if (require.main === module) {
-  app.listen(port, '0.0.0.0', () => {
+  const server = http.createServer(app);
+  attachSocketServer(server);
+  server.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${port}`);
   });
 }

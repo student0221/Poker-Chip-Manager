@@ -4,6 +4,7 @@ const router = express.Router();
 const db = require('../db');
 const { upload } = require('../multerConfig');
 const { DEFAULT_ROOM_ID } = require('../constants');
+const { emitRoomEvent } = require('../socket');
 
 const ROOM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -78,6 +79,7 @@ function handlePlayerInsert(res, roomId, params, avatarPath) {
     }
     db.get('SELECT * FROM players WHERE id=? AND room_id=?', [this.lastID, roomId], (getErr, row) => {
       if (getErr) return res.status(500).json({ error: getErr.message });
+      emitRoomEvent(roomId, 'players:changed', { player: row });
       res.status(201).json(row);
     });
   });
@@ -134,6 +136,7 @@ router.delete('/rooms/:roomId', (req, res) => {
     requireHost(req, res, room, () => {
       db.run('UPDATE rooms SET deleted_at=?, updated_at=? WHERE id=?', [Date.now(), Date.now(), room.id], function(err) {
         if (err) return res.status(500).json({ error: err.message });
+        emitRoomEvent(room.id, 'room:deleted');
         res.json({ message: 'Room deleted' });
       });
     });
@@ -150,6 +153,8 @@ router.post('/rooms/:roomId/reset', (req, res) => {
             if (roomErr) return res.status(500).json({ error: roomErr.message });
             getRoom(room.id, (getErr, nextRoom) => {
               if (getErr) return res.status(500).json({ error: getErr.message });
+              emitRoomEvent(room.id, 'room:state', { room: nextRoom });
+              emitRoomEvent(room.id, 'players:changed');
               res.json(nextRoom);
             });
           });
@@ -179,6 +184,7 @@ router.post('/rooms/:roomId/rate', (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
         getRoom(room.id, (getErr, nextRoom) => {
           if (getErr) return res.status(500).json({ error: getErr.message });
+          emitRoomEvent(room.id, 'room:state', { room: nextRoom });
           res.json({ status: nextRoom.status, chip_rate: nextRoom.chip_rate });
         });
       });
@@ -194,6 +200,7 @@ router.post('/rooms/:roomId/start', (req, res) => {
       }
       db.run("UPDATE rooms SET status='running', updated_at=? WHERE id=?", [Date.now(), room.id], (err) => {
         if (err) return res.status(500).json({ error: err.message });
+        emitRoomEvent(room.id, 'room:state', { status: 'running' });
         res.json({ status: 'running', chip_rate: room.chip_rate });
       });
     });
@@ -208,6 +215,7 @@ router.post('/rooms/:roomId/end', (req, res) => {
       }
       db.run("UPDATE rooms SET status='settling', updated_at=? WHERE id=?", [Date.now(), room.id], (err) => {
         if (err) return res.status(500).json({ error: err.message });
+        emitRoomEvent(room.id, 'room:state', { status: 'settling' });
         res.json({ status: 'settling', chip_rate: room.chip_rate });
       });
     });
@@ -293,6 +301,8 @@ router.post('/rooms/:roomId/players/:id/add-chips', (req, res) => {
           if (runErr) return res.status(500).json({ error: runErr.message });
           db.get('SELECT * FROM players WHERE id=? AND room_id=?', [player.id, room.id], (getErr, row) => {
             if (getErr) return res.status(500).json({ error: getErr.message });
+            emitRoomEvent(room.id, 'chips:added', { playerId: player.id, amount, total: row.initial_chips });
+            emitRoomEvent(room.id, 'players:changed');
             res.json({ ...row, added_chips: amount, message: 'Chips added successfully' });
           });
         });
@@ -324,6 +334,7 @@ router.post('/rooms/:roomId/players/:id/leave', (req, res) => {
         if (runErr) return res.status(500).json({ error: runErr.message });
         db.get('SELECT * FROM players WHERE id=? AND room_id=?', [player.id, room.id], (getErr, row) => {
           if (getErr) return res.status(500).json({ error: getErr.message });
+          emitRoomEvent(room.id, 'players:changed', { player: row });
           res.json({ ...row, message: 'Player leave recorded' });
         });
       });
@@ -347,6 +358,7 @@ router.post('/rooms/:roomId/players/:id/final', (req, res) => {
         const chip_net = row.final_chips - row.initial_chips;
         const money_net = chip_net * room.chip_rate;
         const total_settlement = row.initial_chips * room.chip_rate;
+        emitRoomEvent(room.id, 'settle:progress');
         res.json({ ...row, chip_net, money_net, chip_rate: room.chip_rate, total_settlement });
       });
     });
@@ -379,6 +391,7 @@ router.post('/rooms/:roomId/submit-final', (req, res) => {
         const chip_net = final_chips - player.initial_chips;
         const money_net = chip_net * room.chip_rate;
         const total_settlement = player.initial_chips * room.chip_rate;
+        emitRoomEvent(room.id, 'settle:progress');
         res.json({
           id: player.id,
           name: player.name,
@@ -446,7 +459,10 @@ router.post('/rooms/:roomId/settle', (req, res) => {
               [room.id],
               (rankErr, rankings) => {
                 if (rankErr) return res.status(500).json({ error: rankErr.message });
-                res.json({ rankings: (rankings || []).map((player) => enrichPlayer(player, room.chip_rate)) });
+                const enriched = (rankings || []).map((player) => enrichPlayer(player, room.chip_rate));
+                emitRoomEvent(room.id, 'room:state', { status: 'completed' });
+                emitRoomEvent(room.id, 'game:settled', { rankings: enriched });
+                res.json({ rankings: enriched });
               }
             );
           });

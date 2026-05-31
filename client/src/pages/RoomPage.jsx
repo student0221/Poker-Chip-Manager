@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import {
   addRoomChips,
   adminAddRoomPlayer,
@@ -71,6 +72,28 @@ export default function RoomPage() {
     refresh().catch(err => setMessage(err.message));
     const interval = setInterval(() => refresh().catch(() => {}), 8000);
     return () => clearInterval(interval);
+  }, [roomId]);
+
+  useEffect(() => {
+    const socket = io('/', {
+      transports: ['websocket', 'polling']
+    });
+    const refreshSilently = () => refresh().catch(() => {});
+
+    socket.emit('room:subscribe', { roomId, deviceId: getDeviceId() });
+    socket.on('room:state', refreshSilently);
+    socket.on('players:changed', refreshSilently);
+    socket.on('chips:added', refreshSilently);
+    socket.on('settle:progress', refreshSilently);
+    socket.on('game:settled', refreshSilently);
+    socket.on('room:deleted', () => {
+      setMessage('房间已解散');
+    });
+
+    return () => {
+      socket.emit('room:unsubscribe', { roomId });
+      socket.disconnect();
+    };
   }, [roomId]);
 
   const runAction = async (action) => {
