@@ -470,51 +470,96 @@ export default function AdminPage() {
         )}
 
         {rankings && (
-          <Card>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-slate-700">最终排名</h2>
-                <button
-                  onClick={() => setShowAnimation(true)}
-                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full text-sm transition-colors"
-                >
-                  🎬 播放颁奖动画
-                </button>
-              </div>
-              <div className="space-y-2">
-                {rankings.map((p, i) => (
-                  <div
-                    key={p.id}
-                    className={`flex items-center gap-4 p-4 rounded-xl ${
-                      i === 0 ? 'bg-gradient-to-r from-yellow-50 to-amber-50 border border-amber-200' :
-                      i === 1 ? 'bg-gradient-to-r from-slate-50 to-gray-50 border border-gray-200' :
-                      i === 2 ? 'bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200' :
-                      'bg-slate-50'
-                    }`}
+          <>
+            <Card>
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-slate-700">最终排名</h2>
+                  <button
+                    onClick={() => setShowAnimation(true)}
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full text-sm transition-colors"
                   >
-                    <div className="flex-shrink-0 w-12 text-center">
-                      {i < 3 ? ['🥇', '🥈', '🥉'][i] : <span className="text-lg font-bold text-slate-400">{i + 1}</span>}
-                    </div>
-                    <div className="flex-shrink-0">
-                      <Avatar nickname={p.nickname} src={p.avatar} size="md" />
-                    </div>
-                    <div className="flex-grow">
-                      <div className="font-bold text-slate-800">{sanitizeText(p.nickname)}</div>
-                      <div className="text-xs text-slate-500">
-                        入场 {p.initial_chips} 筹码 · 离场 {p.final_chips ?? 0} 筹码 · 离场价值 {(p.final_settlement ?? 0).toFixed(2)} 元
+                    🎬 播放颁奖动画
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {rankings.map((p, i) => (
+                    <div
+                      key={p.id}
+                      className={`flex items-center gap-4 p-4 rounded-xl ${
+                        i === 0 ? 'bg-gradient-to-r from-yellow-50 to-amber-50 border border-amber-200' :
+                        i === 1 ? 'bg-gradient-to-r from-slate-50 to-gray-50 border border-gray-200' :
+                        i === 2 ? 'bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200' :
+                        'bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex-shrink-0 w-12 text-center">
+                        {i < 3 ? ['🥇', '🥈', '🥉'][i] : <span className="text-lg font-bold text-slate-400">{i + 1}</span>}
+                      </div>
+                      <div className="flex-shrink-0">
+                        <Avatar nickname={p.nickname} src={p.avatar} size="md" />
+                      </div>
+                      <div className="flex-grow">
+                        <div className="font-bold text-slate-800">{sanitizeText(p.nickname)}</div>
+                        <div className="text-xs text-slate-500">
+                          入场 {p.initial_chips} 筹码 · 离场 {p.final_chips ?? 0} 筹码 · 离场价值 {(p.final_settlement ?? 0).toFixed(2)} 元
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold">
+                          <ProfitDisplay value={p.net_profit} />
+                        </div>
+                        <div className="text-xs text-slate-400">元</div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold">
-                        <ProfitDisplay value={p.net_profit} />
-                      </div>
-                      <div className="text-xs text-slate-400">元</div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+
+            {/* Stats Summary */}
+            {rankings.length > 0 && (
+              <Card className="p-6 mt-6">
+                <h3 className="text-lg font-bold text-slate-700 mb-4">📊 统计摘要</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center p-3 bg-emerald-50 rounded-xl">
+                    <div className="text-sm text-slate-500">总盈利</div>
+                    <div className="text-xl font-bold text-emerald-600">
+                      +{rankings.filter(r => r.net_profit > 0).reduce((a, r) => a + r.net_profit, 0).toFixed(2)} 元
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          </Card>
+                  <div className="text-center p-3 bg-red-50 rounded-xl">
+                    <div className="text-sm text-slate-500">总亏损</div>
+                    <div className="text-xl font-bold text-red-500">
+                      {rankings.filter(r => r.net_profit < 0).reduce((a, r) => a + r.net_profit, 0).toFixed(2)} 元
+                    </div>
+                  </div>
+                  <div className="text-center p-3 bg-blue-50 rounded-xl">
+                    <div className="text-sm text-slate-500">参与人数</div>
+                    <div className="text-xl font-bold text-blue-600">{rankings.length} 人</div>
+                  </div>
+                  <div className="text-center p-3 bg-purple-50 rounded-xl">
+                    <div className="text-sm text-slate-500">平均盈亏</div>
+                    <div className="text-xl font-bold text-purple-600">
+                      {(rankings.reduce((a, r) => a + r.net_profit, 0) / rankings.length).toFixed(2)} 元
+                    </div>
+                  </div>
+                  <div className="text-center p-3 bg-amber-50 rounded-xl">
+                    <div className="text-sm text-slate-500">总入场筹码</div>
+                    <div className="text-xl font-bold text-amber-600">
+                      {rankings.reduce((a, r) => a + r.initial_chips, 0)} 筹码
+                    </div>
+                  </div>
+                  <div className="text-center p-3 bg-cyan-50 rounded-xl">
+                    <div className="text-sm text-slate-500">总离场筹码</div>
+                    <div className="text-xl font-bold text-cyan-600">
+                      {rankings.reduce((a, r) => a + (r.final_chips ?? 0), 0)} 筹码
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
+          </>
         )}
 
         {/* 颁奖动画 */}

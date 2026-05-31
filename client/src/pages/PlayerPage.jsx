@@ -474,6 +474,18 @@ export default function PlayerPage() {
                       {(rankings.reduce((a, r) => a + r.net_profit, 0) / rankings.length).toFixed(2)} 元
                     </div>
                   </div>
+                  <div className="text-center p-3 bg-amber-50 rounded-xl">
+                    <div className="text-sm text-slate-500">总入场筹码</div>
+                    <div className="text-xl font-bold text-amber-600">
+                      {rankings.reduce((a, r) => a + r.initial_chips, 0)} 筹码
+                    </div>
+                  </div>
+                  <div className="text-center p-3 bg-cyan-50 rounded-xl">
+                    <div className="text-sm text-slate-500">总离场筹码</div>
+                    <div className="text-xl font-bold text-cyan-600">
+                      {rankings.reduce((a, r) => a + (r.final_chips ?? 0), 0)} 筹码
+                    </div>
+                  </div>
                 </div>
               </Card>
             )}
