@@ -57,56 +57,27 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       room_id TEXT DEFAULT 'default' REFERENCES rooms(id),
       name TEXT NOT NULL,
-      nickname TEXT NOT NULL UNIQUE,
+      nickname TEXT NOT NULL,
       initial_chips INTEGER NOT NULL DEFAULT 0,
       final_chips INTEGER DEFAULT NULL,
       net_profit REAL DEFAULT NULL,
       device_id TEXT,
       left_at INTEGER DEFAULT NULL,
-      created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+      created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+      deleted_at INTEGER DEFAULT NULL,
+      avatar TEXT DEFAULT NULL
     )
   `);
 
-  // 迁移旧表：如果表已存在但没有新列，则添加
-  db.all("PRAGMA table_info(players)", (err, cols) => {
+  db.all('PRAGMA table_info(players)', (err, cols) => {
     if (err) return;
-    const hasDeviceId = cols.some(c => c.name === 'device_id');
-    const hasLeftAt = cols.some(c => c.name === 'left_at');
-    const hasDeletedAt = cols.some(c => c.name === 'deleted_at');
-    const hasAvatar = cols.some(c => c.name === 'avatar');
-    const hasRoomId = cols.some(c => c.name === 'room_id');
-    if (!hasDeviceId) {
-      db.run('ALTER TABLE players ADD COLUMN device_id TEXT');
-    }
-    if (!hasLeftAt) {
-      db.run('ALTER TABLE players ADD COLUMN left_at INTEGER DEFAULT NULL');
-    }
-    if (!hasDeletedAt) {
-      db.run('ALTER TABLE players ADD COLUMN deleted_at INTEGER DEFAULT NULL');
-    }
-    if (!hasAvatar) {
-      db.run('ALTER TABLE players ADD COLUMN avatar TEXT DEFAULT NULL');
-    }
-    if (!hasRoomId) {
-      db.run("ALTER TABLE players ADD COLUMN room_id TEXT DEFAULT 'default'");
-    }
+    addColumnIfMissing(cols, 'device_id', 'ALTER TABLE players ADD COLUMN device_id TEXT');
+    addColumnIfMissing(cols, 'left_at', 'ALTER TABLE players ADD COLUMN left_at INTEGER DEFAULT NULL');
+    addColumnIfMissing(cols, 'deleted_at', 'ALTER TABLE players ADD COLUMN deleted_at INTEGER DEFAULT NULL');
+    addColumnIfMissing(cols, 'avatar', 'ALTER TABLE players ADD COLUMN avatar TEXT DEFAULT NULL');
+    addColumnIfMissing(cols, 'room_id', "ALTER TABLE players ADD COLUMN room_id TEXT DEFAULT 'default'");
     db.run('UPDATE players SET room_id = ? WHERE room_id IS NULL', [DEFAULT_ROOM_ID]);
-    db.run('CREATE INDEX IF NOT EXISTS idx_players_room_id ON players(room_id)');
-    db.run('CREATE INDEX IF NOT EXISTS idx_players_room_device ON players(room_id, device_id)');
-    // 添加 nickname 唯一索引（如果无重复数据）
-    db.all("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_players_nickname'", (err, rows) => {
-      if (err || rows.length > 0) return;
-      db.all('SELECT nickname, COUNT(*) as cnt FROM players GROUP BY nickname HAVING cnt > 1', (err, dups) => {
-        if (err || (dups && dups.length > 0)) {
-          console.warn('[DB MIGRATION] 发现重复昵称，跳过 UNIQUE 索引添加:', dups ? dups.map(d => d.nickname) : 'unknown');
-          return;
-        }
-        db.run('CREATE UNIQUE INDEX idx_players_nickname ON players(nickname)', (err) => {
-          if (err) console.error('[DB MIGRATION] 创建唯一索引失败:', err);
-          else console.log('[DB MIGRATION] 已添加 nickname 唯一索引');
-        });
-      });
-    });
+    migrateNicknameUniqueness();
   });
 
   db.get('SELECT id FROM settings WHERE id = 1', (err, row) => {
@@ -123,6 +94,12 @@ db.serialize(() => {
   });
 });
 
+function addColumnIfMissing(cols, name, sql) {
+  if (!cols.some(col => col.name === name)) {
+    db.run(sql);
+  }
+}
+
 function ensureDefaultRoom(status, chipRate) {
   db.run(
     `
@@ -135,6 +112,82 @@ function ensureDefaultRoom(status, chipRate) {
     `,
     [DEFAULT_ROOM_ID, '默认比赛', 'legacy-admin', chipRate, status]
   );
+}
+
+function migrateNicknameUniqueness() {
+  db.get("SELECT sql FROM sqlite_master WHERE type='table' AND name='players'", (err, row) => {
+    if (err || !row?.sql) return;
+    const hasGlobalNicknameUnique = /nickname\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(row.sql);
+    if (!hasGlobalNicknameUnique) {
+      return ensureRoomIndexes();
+    }
+
+    db.serialize(() => {
+      db.run('ALTER TABLE players RENAME TO players_legacy_unique');
+      db.run(`
+        CREATE TABLE players (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          room_id TEXT DEFAULT 'default' REFERENCES rooms(id),
+          name TEXT NOT NULL,
+          nickname TEXT NOT NULL,
+          initial_chips INTEGER NOT NULL DEFAULT 0,
+          final_chips INTEGER DEFAULT NULL,
+          net_profit REAL DEFAULT NULL,
+          device_id TEXT,
+          left_at INTEGER DEFAULT NULL,
+          created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+          deleted_at INTEGER DEFAULT NULL,
+          avatar TEXT DEFAULT NULL
+        )
+      `);
+      db.run(
+        `
+          INSERT INTO players (
+            id,
+            room_id,
+            name,
+            nickname,
+            initial_chips,
+            final_chips,
+            net_profit,
+            device_id,
+            left_at,
+            created_at,
+            deleted_at,
+            avatar
+          )
+          SELECT
+            id,
+            COALESCE(room_id, ?),
+            name,
+            nickname,
+            initial_chips,
+            final_chips,
+            net_profit,
+            device_id,
+            left_at,
+            created_at,
+            deleted_at,
+            avatar
+          FROM players_legacy_unique
+        `,
+        [DEFAULT_ROOM_ID]
+      );
+      db.run('DROP TABLE players_legacy_unique');
+      ensureRoomIndexes();
+    });
+  });
+}
+
+function ensureRoomIndexes() {
+  db.run('DROP INDEX IF EXISTS idx_players_nickname');
+  db.run('CREATE INDEX IF NOT EXISTS idx_players_room_id ON players(room_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_players_room_device ON players(room_id, device_id)');
+  db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_players_room_nickname
+    ON players(room_id, nickname)
+    WHERE deleted_at IS NULL
+  `);
 }
 
 module.exports = db;

@@ -259,9 +259,14 @@ test('supports room-scoped APIs without leaking players into legacy default room
 
   response = await request(app)
     .post(`/api/rooms/${roomTwo.id}/players/admin-add`)
-    .send({ name: 'Room Two Player', nickname: 'R2', initial_chips: 200, device_id: 'host-two' });
+    .send({ name: 'Room Two Player', nickname: 'R1', initial_chips: 200, device_id: 'host-two' });
   expect(response.status).toBe(201);
-  expect(response.body).toMatchObject({ nickname: 'R2', room_id: roomTwo.id });
+  expect(response.body).toMatchObject({ nickname: 'R1', room_id: roomTwo.id });
+
+  response = await request(app)
+    .post(`/api/rooms/${roomOne.id}/players/admin-add`)
+    .send({ name: 'Duplicate Player', nickname: 'R1', initial_chips: 300, device_id: 'host-one' });
+  expect(response.status).toBe(409);
 
   const roomOnePlayers = await request(app).get(`/api/rooms/${roomOne.id}/players`);
   expect(roomOnePlayers.status).toBe(200);
@@ -269,7 +274,7 @@ test('supports room-scoped APIs without leaking players into legacy default room
 
   const roomTwoPlayers = await request(app).get(`/api/rooms/${roomTwo.id}/players`);
   expect(roomTwoPlayers.status).toBe(200);
-  expect(roomTwoPlayers.body.map(p => p.nickname)).toEqual(['R2']);
+  expect(roomTwoPlayers.body.map(p => p.nickname)).toEqual(['R1']);
 
   const legacyPlayers = await request(app).get('/api/players');
   expect(legacyPlayers.status).toBe(200);
