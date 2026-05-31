@@ -1,9 +1,12 @@
 process.env.TEST_DB = '1';
 
+const http = require('http');
 const request = require('supertest');
+const { io: createClient } = require('socket.io-client');
 
 let app;
 let db;
+let attachSocketServer;
 
 function run(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -27,6 +30,7 @@ beforeAll(async () => {
   jest.resetModules();
   app = require('../server/index');
   db = require('../server/db');
+  attachSocketServer = require('../server/socket').attachSocketServer;
 });
 
 beforeEach(async () => {
@@ -285,4 +289,110 @@ test('supports room-scoped APIs without leaking players into legacy default room
   const legacyPlayers = await request(app).get('/api/players');
   expect(legacyPlayers.status).toBe(200);
   expect(legacyPlayers.body).toEqual([]);
+});
+
+test('room-scoped full game flow settles without affecting another room', async () => {
+  const roomOneRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Main Table', chip_rate: 4, device_id: 'host-main' });
+  const roomTwoRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Side Table', chip_rate: 9, device_id: 'host-side' });
+  const roomOne = roomOneRes.body;
+  const roomTwo = roomTwoRes.body;
+
+  await request(app)
+    .post(`/api/rooms/${roomOne.id}/start`)
+    .send({ device_id: 'host-main' });
+
+  const aliceRes = await request(app)
+    .post(`/api/rooms/${roomOne.id}/players/join`)
+    .send({ name: 'Alice', nickname: 'Alice', initial_chips: 1000, device_id: 'alice-device' });
+  const bobRes = await request(app)
+    .post(`/api/rooms/${roomOne.id}/players/admin-add`)
+    .send({ name: 'Bob', nickname: 'Bob', initial_chips: 800, device_id: 'host-main' });
+
+  await request(app)
+    .post(`/api/rooms/${roomOne.id}/players/${bobRes.body.id}/add-chips`)
+    .send({ amount: 200, device_id: 'host-main' });
+
+  await request(app)
+    .post(`/api/rooms/${roomOne.id}/end`)
+    .send({ device_id: 'host-main' });
+
+  await request(app)
+    .post(`/api/rooms/${roomOne.id}/submit-final`)
+    .send({ nickname: 'Alice', final_chips: 1400, device_id: 'alice-device' });
+
+  await request(app)
+    .post(`/api/rooms/${roomOne.id}/players/${bobRes.body.id}/final`)
+    .send({ final_chips: 600 });
+
+  const settleRes = await request(app)
+    .post(`/api/rooms/${roomOne.id}/settle`)
+    .send({ device_id: 'host-main' });
+  expect(settleRes.status).toBe(200);
+  expect(settleRes.body.rankings).toHaveLength(2);
+  expect(settleRes.body.rankings[0]).toMatchObject({
+    id: aliceRes.body.id,
+    nickname: 'Alice',
+    net_profit: 1600
+  });
+  expect(settleRes.body.rankings[1]).toMatchObject({
+    id: bobRes.body.id,
+    nickname: 'Bob',
+    net_profit: -1600
+  });
+
+  const roomOneStatus = await get('SELECT status FROM rooms WHERE id=?', [roomOne.id]);
+  const roomTwoStatus = await get('SELECT status FROM rooms WHERE id=?', [roomTwo.id]);
+  expect(roomOneStatus.status).toBe('completed');
+  expect(roomTwoStatus.status).toBe('pending');
+
+  const roomTwoPlayers = await request(app).get(`/api/rooms/${roomTwo.id}/players`);
+  expect(roomTwoPlayers.body).toEqual([]);
+});
+
+test('socket subscribers receive room updates after room API writes', async () => {
+  const httpServer = http.createServer(app);
+  const socketServer = attachSocketServer(httpServer);
+  await new Promise(resolve => httpServer.listen(0, '127.0.0.1', resolve));
+  const { port } = httpServer.address();
+  const client = createClient(`http://127.0.0.1:${port}`, {
+    transports: ['websocket'],
+    forceNew: true
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      client.on('connect', resolve);
+      client.on('connect_error', reject);
+    });
+
+    const roomRes = await request(app)
+      .post('/api/rooms')
+      .send({ name: 'Socket Table', chip_rate: 2, device_id: 'socket-host' });
+    const room = roomRes.body;
+
+    const stateEvent = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timed out waiting for room:state')), 5000);
+      client.on('room:state', payload => {
+        clearTimeout(timer);
+        resolve(payload);
+      });
+    });
+    client.emit('room:subscribe', { roomId: room.id });
+
+    const startRes = await request(app)
+      .post(`/api/rooms/${room.id}/start`)
+      .send({ device_id: 'socket-host' });
+    expect(startRes.status).toBe(200);
+
+    const payload = await stateEvent;
+    expect(payload).toMatchObject({ roomId: room.id, status: 'running' });
+  } finally {
+    client.disconnect();
+    await new Promise(resolve => socketServer.close(resolve));
+    await new Promise(resolve => httpServer.close(resolve));
+  }
 });
