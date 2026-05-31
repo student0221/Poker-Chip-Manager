@@ -43,6 +43,7 @@ db.serialize(() => {
     const hasDeviceId = cols.some(c => c.name === 'device_id');
     const hasLeftAt = cols.some(c => c.name === 'left_at');
     const hasDeletedAt = cols.some(c => c.name === 'deleted_at');
+    const hasAvatar = cols.some(c => c.name === 'avatar');
     if (!hasDeviceId) {
       db.run('ALTER TABLE players ADD COLUMN device_id TEXT');
     }
@@ -51,6 +52,9 @@ db.serialize(() => {
     }
     if (!hasDeletedAt) {
       db.run('ALTER TABLE players ADD COLUMN deleted_at INTEGER DEFAULT NULL');
+    }
+    if (!hasAvatar) {
+      db.run('ALTER TABLE players ADD COLUMN avatar TEXT DEFAULT NULL');
     }
     // 添加 nickname 唯一索引（如果无重复数据）
     db.all("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_players_nickname'", (err, rows) => {

@@ -16,20 +16,47 @@ export async function getStatus() {
 }
 
 export async function submitPlayer(data) {
+  let body;
+  let headers = {};
+  if (data.avatarFile) {
+    const formData = new FormData();
+    formData.append('name', data.name || data.nickname);
+    formData.append('nickname', data.nickname);
+    formData.append('initial_chips', data.initial_chips);
+    formData.append('device_id', getDeviceId());
+    formData.append('avatar', data.avatarFile);
+    body = formData;
+  } else {
+    headers = { 'Content-Type': 'application/json' };
+    body = JSON.stringify({ ...data, device_id: getDeviceId() });
+  }
   const res = await fetch(`${API_BASE}/api/players/join`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...data, device_id: getDeviceId() })
+    headers,
+    body
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function adminAddPlayer(data) {
+  let body;
+  let headers = {};
+  if (data.avatarFile) {
+    const formData = new FormData();
+    formData.append('name', data.name || data.nickname);
+    formData.append('nickname', data.nickname);
+    formData.append('initial_chips', data.initial_chips);
+    formData.append('avatar', data.avatarFile);
+    body = formData;
+  } else {
+    headers = { 'Content-Type': 'application/json' };
+    body = JSON.stringify(data);
+  }
   const res = await fetch(`${API_BASE}/api/players/admin-add`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
+    headers,
+    body
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

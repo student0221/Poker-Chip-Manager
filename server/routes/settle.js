@@ -15,7 +15,7 @@ router.post('/players/:id/final', (req, res) => {
 
     db.run('UPDATE players SET final_chips=? WHERE id=?', [final_chips, id], function(runErr) {
       if (runErr) return res.status(500).json({ error: runErr.message });
-      db.get('SELECT * FROM players WHERE id=?', [id], (getErr, row) => {
+      db.get('SELECT id, name, nickname, initial_chips, final_chips, net_profit, avatar FROM players WHERE id=?', [id], (getErr, row) => {
         if (getErr) return res.status(500).json({ error: getErr.message });
         const chip_net = row.final_chips - row.initial_chips;
         const money_net = chip_net * settings.chip_rate;
@@ -155,7 +155,7 @@ router.post('/settle', (req, res) => {
               if (this.changes === 0) {
                 return res.status(409).json({ error: '清算已被执行，请勿重复提交' });
               }
-              db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit FROM players WHERE deleted_at IS NULL ORDER BY net_profit DESC', (err, rankings) => {
+              db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit, avatar FROM players WHERE deleted_at IS NULL ORDER BY net_profit DESC', (err, rankings) => {
                 const enriched = (rankings || []).map(r => ({
                   ...r,
                   total_settlement: r.initial_chips * settings.chip_rate,
@@ -172,7 +172,7 @@ router.post('/settle', (req, res) => {
 });
 
 router.get('/rankings', (req, res) => {
-  db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit FROM players WHERE deleted_at IS NULL ORDER BY net_profit DESC', (err, rows) => {
+  db.all('SELECT id, name, nickname, initial_chips, final_chips, net_profit, avatar FROM players WHERE deleted_at IS NULL ORDER BY net_profit DESC', (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     db.get('SELECT chip_rate FROM settings WHERE id=1', (settingsErr, settings) => {
       if (settingsErr) return res.status(500).json({ error: settingsErr.message });

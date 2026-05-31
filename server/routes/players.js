@@ -1,28 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { upload } = require('../multerConfig');
 
 function getSettings(callback) {
   db.get('SELECT status FROM settings WHERE id=1', callback);
 }
 
-function handlePlayerInsert(res, params) {
-  db.run(
-    'INSERT INTO players (name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?)',
-    params,
-    function(err) {
-      if (err) {
-        if (err.message && err.message.includes('UNIQUE constraint failed: players.nickname')) {
-          return res.status(409).json({ error: 'Nickname is already in use' });
-        }
-        return res.status(500).json({ error: err.message });
+function handlePlayerInsert(res, params, avatarPath) {
+  const sql = avatarPath
+    ? 'INSERT INTO players (name, nickname, initial_chips, device_id, avatar) VALUES (?, ?, ?, ?, ?)'
+    : 'INSERT INTO players (name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?)';
+  const values = avatarPath ? [...params, avatarPath] : params;
+
+  db.run(sql, values, function(err) {
+    if (err) {
+      if (err.message && err.message.includes('UNIQUE constraint failed: players.nickname')) {
+        return res.status(409).json({ error: 'Nickname is already in use' });
       }
-      db.get('SELECT * FROM players WHERE id=?', [this.lastID], (getErr, row) => {
-        if (getErr) return res.status(500).json({ error: getErr.message });
-        res.status(201).json(row);
-      });
+      return res.status(500).json({ error: err.message });
     }
-  );
+    db.get('SELECT * FROM players WHERE id=?', [this.lastID], (getErr, row) => {
+      if (getErr) return res.status(500).json({ error: getErr.message });
+      res.status(201).json(row);
+    });
+  });
 }
 
 router.get('/players', (req, res) => {
@@ -32,7 +34,7 @@ router.get('/players', (req, res) => {
   });
 });
 
-router.post('/players/join', (req, res) => {
+router.post('/players/join', upload.single('avatar'), (req, res) => {
   getSettings((err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!settings || settings.status !== 'running') {
@@ -45,6 +47,7 @@ router.post('/players/join', (req, res) => {
     }
 
     const realName = name && name.trim() ? name.trim() : nickname;
+    const avatarPath = req.file ? `/uploads/avatars/${req.file.filename}` : null;
 
     if (device_id) {
       db.get('SELECT id FROM players WHERE device_id = ? AND left_at IS NULL AND deleted_at IS NULL', [device_id], (deviceErr, row) => {
@@ -52,15 +55,15 @@ router.post('/players/join', (req, res) => {
         if (row) {
           return res.status(409).json({ error: 'This device has already joined the current game' });
         }
-        handlePlayerInsert(res, [realName, nickname, initial_chips, device_id || null]);
+        handlePlayerInsert(res, [realName, nickname, initial_chips, device_id || null], avatarPath);
       });
     } else {
-      handlePlayerInsert(res, [realName, nickname, initial_chips, device_id || null]);
+      handlePlayerInsert(res, [realName, nickname, initial_chips, device_id || null], avatarPath);
     }
   });
 });
 
-router.post('/players/admin-add', (req, res) => {
+router.post('/players/admin-add', upload.single('avatar'), (req, res) => {
   getSettings((err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!settings || !['pending', 'running', 'settling'].includes(settings.status)) {
@@ -73,7 +76,22 @@ router.post('/players/admin-add', (req, res) => {
     }
 
     const realName = name && name.trim() ? name.trim() : nickname;
-    handlePlayerInsert(res, [realName, nickname, initial_chips, null]);
+    const avatarPath = req.file ? `/uploads/avatars/${req.file.filename}` : null;
+    handlePlayerInsert(res, [realName, nickname, initial_chips, null], avatarPath);
+  });
+});
+
+router.post('/players/:id/avatar', upload.single('avatar'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No avatar file uploaded' });
+  }
+  const avatarPath = `/uploads/avatars/${req.file.filename}`;
+  db.run('UPDATE players SET avatar = ? WHERE id = ?', [avatarPath, req.params.id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    db.get('SELECT * FROM players WHERE id = ?', [req.params.id], (getErr, row) => {
+      if (getErr) return res.status(500).json({ error: getErr.message });
+      res.json(row);
+    });
   });
 });
 

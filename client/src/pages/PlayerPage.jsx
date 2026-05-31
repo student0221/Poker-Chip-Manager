@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getStatus, submitPlayer, submitFinal, getSettleProgress, getRankings, leavePlayer, getPlayers } from '../api';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -7,6 +7,8 @@ import ProfitDisplay from '../components/ProfitDisplay';
 import Input from '../components/Input';
 import Medal from '../components/Medal';
 import PokerRules from '../components/PokerRules';
+import Avatar from '../components/Avatar';
+import RankingAnimation from '../components/RankingAnimation';
 import { sanitizeText } from '../utils/safeRender';
 
 // 本地存储当前玩家报名状态
@@ -35,6 +37,9 @@ export default function PlayerPage() {
   const [finalResult, setFinalResult] = useState(null);
   const [progress, setProgress] = useState(null);
   const [rankings, setRankings] = useState(null);
+  const [showAnimation, setShowAnimation] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const hasAutoPlayed = useRef(false);
 
   const myPlayer = getMyPlayer();
 
@@ -69,17 +74,27 @@ export default function PlayerPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // 首次进入 completed 状态时自动播放颁奖动画
+  useEffect(() => {
+    if (status?.status === 'completed' && rankings?.length > 0 && !hasAutoPlayed.current) {
+      hasAutoPlayed.current = true;
+      setShowAnimation(true);
+    }
+  }, [status?.status, rankings]);
+
   const handleJoin = async (e) => {
     e.preventDefault();
     try {
       const result = await submitPlayer({
         name: joinForm.nickname,
         nickname: joinForm.nickname,
-        initial_chips: parseInt(joinForm.initial_chips)
+        initial_chips: parseInt(joinForm.initial_chips),
+        avatarFile: joinForm.avatarFile
       });
       setMyPlayer({ id: result.id, nickname: result.nickname });
       setJoinMsg('报名成功！');
-      setJoinForm({ nickname: '', initial_chips: '' });
+      setJoinForm({ nickname: '', initial_chips: '', avatarFile: null });
+      setAvatarPreview(null);
       refreshStatus();
     } catch (err) {
       setJoinMsg('❌ ' + err.message);
@@ -174,6 +189,27 @@ export default function PlayerPage() {
                     onChange={e => setJoinForm({...joinForm, initial_chips: e.target.value})}
                     required
                   />
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">头像（可选）</label>
+                    <div className="flex items-center gap-3">
+                      {avatarPreview && (
+                        <img src={avatarPreview} alt="预览" className="w-10 h-10 rounded-full object-cover border border-slate-200" />
+                      )}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        onChange={e => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            setJoinForm({ ...joinForm, avatarFile: file });
+                            setAvatarPreview(URL.createObjectURL(file));
+                          }
+                        }}
+                        className="text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100"
+                      />
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">支持 JPG、PNG、WebP、GIF，最大 2MB</p>
+                  </div>
                   <Button type="submit" variant="primary">提交报名</Button>
                   {joinMsg && (
                     <div className={`text-sm text-center mt-2 p-3 rounded-lg ${joinMsg.includes('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
@@ -217,9 +253,7 @@ export default function PlayerPage() {
                   {allPlayers.filter(p => !p.left_at).map(p => (
                     <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl ${p.id === myPlayer?.id ? 'bg-blue-50 border border-blue-100' : 'bg-slate-50'}`}>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm">
-                          {sanitizeText(p.nickname).charAt(0)}
-                        </div>
+                        <Avatar nickname={p.nickname} src={p.avatar} size="sm" />
                         <div>
                           <div className="font-medium text-slate-800">
                             {sanitizeText(p.nickname)}
@@ -338,6 +372,7 @@ export default function PlayerPage() {
                       <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                         <div className="flex items-center gap-3">
                           <Medal rank={i + 1} />
+                          <Avatar nickname={p.nickname} src={p.avatar} size="sm" />
                           <span className="font-medium">{sanitizeText(p.nickname)}</span>
                           <span className="text-xs text-slate-400">结算 {(p.total_settlement ?? 0).toFixed(2)} 元</span>
                         </div>
@@ -369,6 +404,12 @@ export default function PlayerPage() {
             <Card className="p-6 text-center bg-gradient-to-r from-blue-600 to-purple-600 text-white">
               <h2 className="text-2xl font-bold">🏆 比赛结果</h2>
               <p className="text-blue-100 mt-1">1筹码 = {status.chip_rate}元</p>
+              <button
+                onClick={() => setShowAnimation(true)}
+                className="mt-3 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-full text-sm transition-colors"
+              >
+                🎬 播放颁奖动画
+              </button>
             </Card>
 
             <Card>
@@ -385,6 +426,9 @@ export default function PlayerPage() {
                   >
                     <div className="flex-shrink-0 w-12 text-center">
                       <Medal rank={i + 1} />
+                    </div>
+                    <div className="flex-shrink-0">
+                      <Avatar nickname={p.nickname} src={p.avatar} size="md" />
                     </div>
                     <div className="flex-grow">
                       <div className="font-bold text-slate-800">{sanitizeText(p.nickname)}</div>
@@ -434,6 +478,14 @@ export default function PlayerPage() {
               </Card>
             )}
           </div>
+        )}
+
+        {/* 颁奖动画 */}
+        {showAnimation && rankings && (
+          <RankingAnimation
+            rankings={rankings}
+            onClose={() => setShowAnimation(false)}
+          />
         )}
 
         {/* 游戏规则 & 牌型胜率（常驻底部） */}

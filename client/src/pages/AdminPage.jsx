@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getStatus, getPlayers, deletePlayer, getSettleProgress, adminAddPlayer } from '../api';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import StatusBadge from '../components/StatusBadge';
 import ProfitDisplay from '../components/ProfitDisplay';
 import { sanitizeText } from '../utils/safeRender';
+import Avatar from '../components/Avatar';
+import RankingAnimation from '../components/RankingAnimation';
 
 export default function AdminPage() {
   const [status, setStatus] = useState(null);
@@ -13,7 +15,10 @@ export default function AdminPage() {
   const [rateCommitted, setRateCommitted] = useState('');
   const [rankings, setRankings] = useState(null);
   const [progress, setProgress] = useState(null);
-  const [addForm, setAddForm] = useState({ nickname: '', initial_chips: '' });
+  const [addForm, setAddForm] = useState({ nickname: '', initial_chips: '', avatarFile: null });
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [showAnimation, setShowAnimation] = useState(false);
+  const hasAutoPlayed = useRef(false);
   const [addMsg, setAddMsg] = useState('');
   const [manualFinal, setManualFinal] = useState({});
   const [chipAdds, setChipAdds] = useState({});
@@ -40,6 +45,14 @@ export default function AdminPage() {
     const interval = setInterval(refresh, 8000);
     return () => clearInterval(interval);
   }, []);
+
+  // 执行清算后自动播放颁奖动画
+  useEffect(() => {
+    if (rankings?.length > 0 && !hasAutoPlayed.current) {
+      hasAutoPlayed.current = true;
+      setShowAnimation(true);
+    }
+  }, [rankings]);
 
   const handleStart = async () => {
     await fetch('/api/start', { method: 'POST' });
@@ -117,6 +130,7 @@ export default function AdminPage() {
     if (res.ok) {
       setMessage('已重置，可以开始新比赛');
       setRankings(null);
+      hasAutoPlayed.current = false;
       refresh();
     } else {
       setMessage('重置失败');
@@ -129,10 +143,12 @@ export default function AdminPage() {
       await adminAddPlayer({
         name: addForm.nickname,
         nickname: addForm.nickname,
-        initial_chips: parseInt(addForm.initial_chips, 10)
+        initial_chips: parseInt(addForm.initial_chips, 10),
+        avatarFile: addForm.avatarFile
       });
       setAddMsg('添加成功');
-      setAddForm({ nickname: '', initial_chips: '' });
+      setAddForm({ nickname: '', initial_chips: '', avatarFile: null });
+      setAvatarPreview(null);
       refresh();
     } catch (err) {
       setAddMsg(err.message);
@@ -186,6 +202,7 @@ export default function AdminPage() {
     const res = await fetch('/api/settle', { method: 'POST' });
     const data = await res.json();
     setRankings(data.rankings);
+    hasAutoPlayed.current = false;
     refresh();
   };
 
@@ -276,6 +293,26 @@ export default function AdminPage() {
                   required
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">头像</label>
+                <div className="flex items-center gap-2">
+                  {avatarPreview && (
+                    <img src={avatarPreview} alt="预览" className="w-8 h-8 rounded-full object-cover border border-slate-200" />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={e => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        setAddForm({ ...addForm, avatarFile: file });
+                        setAvatarPreview(URL.createObjectURL(file));
+                      }
+                    }}
+                    className="text-sm text-slate-600 file:mr-2 file:py-1.5 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100"
+                  />
+                </div>
+              </div>
               <Button variant="success" type="submit" className="mb-0">添加</Button>
             </form>
             {addMsg && (
@@ -320,9 +357,7 @@ export default function AdminPage() {
                     <div key={p.id} className={`p-3 rounded-xl ${isLeft ? 'bg-amber-50 border border-amber-100' : 'bg-slate-50'}`}>
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
-                            {sanitizeText(p.nickname).charAt(0)}
-                          </div>
+                          <Avatar nickname={p.nickname} src={p.avatar} size="md" />
                           <div>
                             <div className="font-medium text-slate-800">
                               {sanitizeText(p.nickname)}
@@ -421,6 +456,7 @@ export default function AdminPage() {
                     <div key={p.id} className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl">
                       <div className="flex items-center gap-3">
                         <span className="text-lg font-bold text-slate-400">#{i + 1}</span>
+                        <Avatar nickname={p.nickname} src={p.avatar} size="sm" />
                         <span className="font-medium">{sanitizeText(p.nickname)}</span>
                         <span className="text-xs text-slate-400">结算 {(p.total_settlement ?? 0).toFixed(2)} 元</span>
                       </div>
@@ -436,7 +472,15 @@ export default function AdminPage() {
         {rankings && (
           <Card>
             <div className="p-6">
-              <h2 className="text-lg font-bold text-slate-700 mb-4">最终排名</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-slate-700">最终排名</h2>
+                <button
+                  onClick={() => setShowAnimation(true)}
+                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full text-sm transition-colors"
+                >
+                  🎬 播放颁奖动画
+                </button>
+              </div>
               <div className="space-y-2">
                 {rankings.map((p, i) => (
                   <div
@@ -450,6 +494,9 @@ export default function AdminPage() {
                   >
                     <div className="flex-shrink-0 w-12 text-center">
                       {i < 3 ? ['🥇', '🥈', '🥉'][i] : <span className="text-lg font-bold text-slate-400">{i + 1}</span>}
+                    </div>
+                    <div className="flex-shrink-0">
+                      <Avatar nickname={p.nickname} src={p.avatar} size="md" />
                     </div>
                     <div className="flex-grow">
                       <div className="font-bold text-slate-800">{sanitizeText(p.nickname)}</div>
@@ -468,6 +515,14 @@ export default function AdminPage() {
               </div>
             </div>
           </Card>
+        )}
+
+        {/* 颁奖动画 */}
+        {showAnimation && rankings && (
+          <RankingAnimation
+            rankings={rankings}
+            onClose={() => setShowAnimation(false)}
+          />
         )}
       </div>
     </div>
