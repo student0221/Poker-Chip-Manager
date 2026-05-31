@@ -98,6 +98,15 @@ export async function resetRoom(roomId) {
   return parseJsonResponse(res);
 }
 
+export async function deleteRoom(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
 export async function joinRoom(roomId, data) {
   const res = await fetch(`${API_BASE}/api/rooms/${roomId}/players/join`, {
     method: 'POST',

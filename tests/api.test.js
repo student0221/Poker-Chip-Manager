@@ -353,6 +353,45 @@ test('room-scoped full game flow settles without affecting another room', async 
   expect(roomTwoPlayers.body).toEqual([]);
 });
 
+test('room host permissions protect reset and delete actions', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Host Protected Table', chip_rate: 5, device_id: 'host-device' });
+  expect(roomRes.status).toBe(201);
+  const room = roomRes.body;
+
+  let response = await request(app)
+    .post(`/api/rooms/${room.id}/players/admin-add`)
+    .send({ name: 'Protected Player', nickname: 'Protected', initial_chips: 100, device_id: 'host-device' });
+  expect(response.status).toBe(201);
+
+  response = await request(app)
+    .post(`/api/rooms/${room.id}/reset`)
+    .send({ device_id: 'other-device' });
+  expect(response.status).toBe(403);
+
+  response = await request(app)
+    .delete(`/api/rooms/${room.id}`)
+    .send({ device_id: 'other-device' });
+  expect(response.status).toBe(403);
+
+  response = await request(app)
+    .post(`/api/rooms/${room.id}/reset`)
+    .send({ device_id: 'host-device' });
+  expect(response.status).toBe(200);
+
+  const playersAfterReset = await request(app).get(`/api/rooms/${room.id}/players`);
+  expect(playersAfterReset.body).toEqual([]);
+
+  response = await request(app)
+    .delete(`/api/rooms/${room.id}`)
+    .send({ device_id: 'host-device' });
+  expect(response.status).toBe(200);
+
+  response = await request(app).get(`/api/rooms/${room.id}`);
+  expect(response.status).toBe(404);
+});
+
 test('socket subscribers receive room updates after room API writes', async () => {
   const httpServer = http.createServer(app);
   const socketServer = attachSocketServer(httpServer);

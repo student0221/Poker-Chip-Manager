@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
   addRoomChips,
   adminAddRoomPlayer,
+  deleteRoom,
   endRoom,
   getDeviceId,
   getNetworkInfo,
@@ -33,6 +34,7 @@ function inviteUrl(baseUrl, roomId) {
 
 export default function RoomPage() {
   const { roomId } = useParams();
+  const navigate = useNavigate();
   const [room, setRoom] = useState(null);
   const [players, setPlayers] = useState([]);
   const [networkInfo, setNetworkInfo] = useState(null);
@@ -80,8 +82,12 @@ export default function RoomPage() {
       transports: ['websocket', 'polling']
     });
     const refreshSilently = () => refresh().catch(() => {});
+    const subscribeAndRefresh = () => {
+      socket.emit('room:subscribe', { roomId, deviceId: getDeviceId() });
+      refreshSilently();
+    };
 
-    socket.emit('room:subscribe', { roomId, deviceId: getDeviceId() });
+    socket.on('connect', subscribeAndRefresh);
     socket.on('room:state', refreshSilently);
     socket.on('players:changed', refreshSilently);
     socket.on('chips:added', refreshSilently);
@@ -89,6 +95,7 @@ export default function RoomPage() {
     socket.on('game:settled', refreshSilently);
     socket.on('room:deleted', () => {
       setMessage('房间已解散');
+      navigate('/rooms');
     });
 
     return () => {
@@ -105,6 +112,14 @@ export default function RoomPage() {
     } catch (err) {
       setMessage(err.message);
     }
+  };
+
+  const handleDeleteRoom = () => {
+    if (!window.confirm('确定要解散这个房间吗？房间会从大厅隐藏。')) return;
+    runAction(async () => {
+      await deleteRoom(roomId);
+      navigate('/rooms');
+    });
   };
 
   const handleJoin = (event) => {
@@ -187,6 +202,7 @@ export default function RoomPage() {
               {room.status === 'settling' && <Button variant="primary" onClick={() => runAction(() => settleRoom(roomId))}>执行清算</Button>}
               {room.status === 'completed' && <Button variant="success" onClick={() => runAction(() => resetRoom(roomId))}>重置房间</Button>}
               <Button variant="ghost" onClick={() => refresh().catch(err => setMessage(err.message))}>刷新</Button>
+              <Button variant="danger" onClick={handleDeleteRoom}>解散房间</Button>
             </div>
           </Card>
         )}
