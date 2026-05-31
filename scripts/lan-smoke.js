@@ -43,6 +43,7 @@ async function main() {
     cwd: process.cwd(),
     env: {
       ...process.env,
+      TEST_DB: process.env.LAN_SMOKE_REAL_DB ? process.env.TEST_DB : '1',
       PORT: String(PORT)
     },
     stdio: ['ignore', 'pipe', 'pipe']

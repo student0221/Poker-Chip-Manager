@@ -54,6 +54,8 @@ Windows 下也可以直接运行 `start.bat`。脚本会打开房间大厅，并
 npm run smoke:lan
 ```
 
+默认 smoke 使用内存数据库，不会污染正式 `data/poker.db`。如果需要刻意验证真实数据库迁移和写入，可临时运行 `set LAN_SMOKE_REAL_DB=1 && npm run smoke:lan`。
+
 在同一个 WiFi 下准备一台主机和至少两台手机/平板：
 
 1. 主机运行 `start.bat` 或 `npm start`，确认终端显示 `http://<局域网IP>:3000/#/rooms`。
