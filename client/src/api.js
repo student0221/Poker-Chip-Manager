@@ -1,13 +1,21 @@
 const API_BASE = '';
 
 // 获取或生成设备唯一标识
-function getDeviceId() {
+export function getDeviceId() {
   let did = localStorage.getItem('poker_device_id');
   if (!did) {
     did = 'd_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
     localStorage.setItem('poker_device_id', did);
   }
   return did;
+}
+
+async function parseJsonResponse(res) {
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.error || data?.message || 'Request failed');
+  }
+  return data;
 }
 
 export async function getStatus() {
@@ -17,8 +25,118 @@ export async function getStatus() {
 
 export async function getNetworkInfo() {
   const res = await fetch(`${API_BASE}/api/network-info`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return parseJsonResponse(res);
+}
+
+export async function getRooms() {
+  const res = await fetch(`${API_BASE}/api/rooms`);
+  return parseJsonResponse(res);
+}
+
+export async function getRoom(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}`);
+  return parseJsonResponse(res);
+}
+
+export async function createRoom(data) {
+  const res = await fetch(`${API_BASE}/api/rooms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...data, device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function getRoomStatus(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/status`);
+  return parseJsonResponse(res);
+}
+
+export async function getRoomPlayers(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/players`);
+  return parseJsonResponse(res);
+}
+
+export async function startRoom(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function endRoom(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/end`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function settleRoom(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/settle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function resetRoom(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function joinRoom(roomId, data) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/players/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...data, device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function adminAddRoomPlayer(roomId, data) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/players/admin-add`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...data, device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function addRoomChips(roomId, playerId, amount) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/players/${playerId}/add-chips`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount, device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function submitRoomFinal(roomId, data) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/submit-final`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...data, device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function getRoomSettleProgress(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/settle/progress`);
+  return parseJsonResponse(res);
+}
+
+export async function getRoomRankings(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/rankings`);
+  return parseJsonResponse(res);
 }
 
 export async function submitPlayer(data) {
