@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createRoom, getDeviceId, getNetworkInfo, getRooms } from '../api';
+import { createRoom, getDeviceId, getDiscoveredHosts, getNetworkInfo, getRooms } from '../api';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import Input from '../components/Input';
@@ -14,6 +14,7 @@ function roomUrl(baseUrl, roomId) {
 export default function RoomsPage() {
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
+  const [discoveredRooms, setDiscoveredRooms] = useState([]);
   const [networkInfo, setNetworkInfo] = useState(null);
   const [form, setForm] = useState({ name: '', chip_rate: '0.05' });
   const [joinCode, setJoinCode] = useState('');
@@ -24,7 +25,9 @@ export default function RoomsPage() {
       getRooms(),
       getNetworkInfo().catch(() => null)
     ]);
+    const discovered = await getDiscoveredHosts().catch(() => []);
     setRooms(roomRows.filter(room => room.id !== 'default'));
+    setDiscoveredRooms(discovered);
     setNetworkInfo(info);
   };
 
@@ -136,6 +139,39 @@ export default function RoomsPage() {
                     <Link to={`/room/${room.id}`}>
                       <Button variant="primary">进入</Button>
                     </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-6">
+          <div className="mb-4">
+            <h2 className="text-xl font-bold text-slate-800">发现的局域网房间</h2>
+            <p className="text-sm text-slate-500">来自同一局域网其他主机的 UDP 广播。发现失败时仍可手动输入房间链接。</p>
+          </div>
+
+          {discoveredRooms.length === 0 ? (
+            <div className="text-center text-slate-400 py-6">暂未发现其他主机房间。</div>
+          ) : (
+            <div className="space-y-3">
+              {discoveredRooms.map(room => (
+                <div key={`${room.hostIp}:${room.port}:${room.roomId}`} className="p-4 rounded-xl bg-cyan-50 border border-cyan-100">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-slate-800">{room.roomName || room.roomId}</h3>
+                        <StatusBadge status={room.status} />
+                      </div>
+                      <div className="text-sm text-slate-500 mt-1">
+                        {room.hostIp}:{room.port} · {room.players ?? 0} 人 · 房间码 {room.roomId}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1 break-all">{room.url}</div>
+                    </div>
+                    <a href={room.url}>
+                      <Button variant="primary">打开</Button>
+                    </a>
                   </div>
                 </div>
               ))}

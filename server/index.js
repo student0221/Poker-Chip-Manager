@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const { startDiscovery } = require('./discovery');
 const { attachSocketServer } = require('./socket');
 const app = express();
 
@@ -37,6 +38,7 @@ if (require.main === module) {
   attachSocketServer(server);
   server.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${port}`);
+    startDiscovery(port);
   });
 }
 

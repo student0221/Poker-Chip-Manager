@@ -33,6 +33,11 @@ export async function getRooms() {
   return parseJsonResponse(res);
 }
 
+export async function getDiscoveredHosts() {
+  const res = await fetch(`${API_BASE}/api/discovered-hosts`);
+  return parseJsonResponse(res);
+}
+
 export async function getRoom(roomId) {
   const res = await fetch(`${API_BASE}/api/rooms/${roomId}`);
   return parseJsonResponse(res);

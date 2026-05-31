@@ -4,6 +4,7 @@ const router = express.Router();
 const db = require('../db');
 const { upload } = require('../multerConfig');
 const { DEFAULT_ROOM_ID } = require('../constants');
+const { getDiscoveredRooms } = require('../discovery');
 const { emitRoomEvent } = require('../socket');
 
 const ROOM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -122,6 +123,10 @@ router.get('/rooms', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
   });
+});
+
+router.get('/discovered-hosts', (req, res) => {
+  res.json(getDiscoveredRooms());
 });
 
 router.get('/rooms/:roomId', (req, res) => {

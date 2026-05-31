@@ -204,6 +204,12 @@ test('supports PUBLIC_PORT and PUBLIC_URL overrides for network info', async () 
   expect(res.body.port).toBeNull();
 });
 
+test('returns discovered LAN hosts list', async () => {
+  const res = await request(app).get('/api/discovered-hosts');
+  expect(res.status).toBe(200);
+  expect(Array.isArray(res.body)).toBe(true);
+});
+
 test('keeps legacy API mapped to the default room data model', async () => {
   let defaultRoom = await get('SELECT id, status, chip_rate FROM rooms WHERE id=?', ['default']);
   expect(defaultRoom).toMatchObject({ id: 'default', status: 'pending', chip_rate: 0.05 });
