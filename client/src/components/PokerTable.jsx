@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Avatar from './Avatar';
 import CommunityCards from './CommunityCards';
@@ -16,16 +16,13 @@ const ROUND_NAMES = {
   showdown: '摊牌'
 };
 
-/**
- * Calculate seat positions on an ellipse.
- * The player's own seat is always at the bottom center.
- */
-function getSeatLayout(mySeat, totalSeats) {
+function getSeatLayout(mySeat, totalSeats, isMobile) {
   if (totalSeats <= 0) return [];
   const angleStep = 360 / totalSeats;
   const offsetDeg = 90 - mySeat * angleStep;
-  const rx = Math.min(46, 38 + totalSeats * 1.2);
-  const ry = Math.min(44, 36 + totalSeats * 1.0);
+  // Mobile: tighter layout
+  const rx = isMobile ? Math.min(42, 34 + totalSeats) : Math.min(46, 38 + totalSeats * 1.2);
+  const ry = isMobile ? Math.min(40, 32 + totalSeats) : Math.min(44, 36 + totalSeats * 1.0);
 
   return Array.from({ length: totalSeats }, (_, i) => {
     const angleDeg = offsetDeg + i * angleStep;
@@ -40,6 +37,14 @@ function getSeatLayout(mySeat, totalSeats) {
 export default function PokerTable({ handState, myPlayerId, isHost, onAction, onStartHand }) {
   const { hand, players: handPlayers, actions, pots } = handState || {};
   const [showResult, setShowResult] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   const isMyTurn = useMemo(() => {
     if (!hand || !handPlayers) return false;
@@ -62,24 +67,22 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
 
   const totalSeats = handPlayers?.length || 0;
   const mySeat = myPlayer?.seat ?? 0;
-  const seatLayouts = useMemo(() => getSeatLayout(mySeat, totalSeats), [mySeat, totalSeats]);
+  const seatLayouts = useMemo(() => getSeatLayout(mySeat, totalSeats, isMobile), [mySeat, totalSeats, isMobile]);
   const getPlayerAtSeat = (seat) => handPlayers?.find(p => p.seat === seat);
-
-  // Track hand id to trigger entry animations
   const handKey = hand?.id || 'none';
 
   if (!hand) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 space-y-4">
-        <div className="text-slate-400">暂无进行中的手牌</div>
+      <div className="flex flex-col items-center justify-center py-8 sm:py-12 space-y-4">
+        <div className="text-slate-400 text-sm">No hand in progress</div>
         {isHost && (
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={onStartHand}
-            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition shadow-lg"
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition shadow-lg text-sm"
           >
-            开始新一手
+            Start New Hand
           </motion.button>
         )}
       </div>
@@ -87,9 +90,9 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
   }
 
   return (
-    <div className="relative w-full max-w-4xl mx-auto" style={{ aspectRatio: '16/10' }}>
-      {/* Felt table with wood rail */}
-      <div className="absolute inset-[2%] rounded-[45%] shadow-2xl"
+    <div className="relative w-full mx-auto" style={{ minHeight: isMobile ? '320px' : '420px' }}>
+      {/* Felt table */}
+      <div className="absolute inset-[1%] sm:inset-[2%] rounded-[45%] shadow-2xl"
         style={{
           background: 'radial-gradient(ellipse at center, #1a5c3a 0%, #0f3d26 60%, #0a2e1c 100%)',
           boxShadow: 'inset 0 0 60px rgba(0,0,0,0.5), 0 10px 40px rgba(0,0,0,0.4)'
@@ -98,7 +101,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
       {/* Wood border */}
       <div className="absolute inset-0 rounded-[48%] pointer-events-none"
         style={{
-          border: '12px solid transparent',
+          border: isMobile ? '8px solid transparent' : '12px solid transparent',
           background: 'linear-gradient(#8B5E3C, #5C3A1E) border-box',
           WebkitMask: 'linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0)',
           WebkitMaskComposite: 'xor',
@@ -106,11 +109,9 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
           opacity: 0.95
         }}
       />
-      {/* Inner felt line */}
-      <div className="absolute inset-[5%] rounded-[42%] border-2 border-white/10 pointer-events-none" />
 
-      {/* Community cards and pot - center */}
-      <div className="absolute left-1/2 top-[48%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-10">
+      {/* Center: pot + community cards */}
+      <div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 sm:gap-2 z-10">
         <AnimatePresence mode="popLayout">
           <motion.div
             key={totalPot}
@@ -123,23 +124,23 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
         </AnimatePresence>
         <CommunityCards cards={communityCards} />
         {hand.current_round && (
-          <div className="text-xs text-emerald-100/70 bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
+          <div className="text-[10px] sm:text-xs text-emerald-100/70 bg-black/40 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full backdrop-blur-sm">
             {ROUND_NAMES[hand.current_round] || hand.current_round}
           </div>
         )}
       </div>
 
-      {/* Dealer button indicator */}
+      {/* Dealer button */}
       <motion.div
         key={`dealer-${hand.dealer_seat}-${handKey}`}
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
         transition={{ type: 'spring', stiffness: 500, damping: 15 }}
-        className="absolute z-10 w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-white text-slate-800 text-[9px] sm:text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-amber-400"
+        className="absolute z-10 w-5 h-5 sm:w-7 sm:h-7 rounded-full bg-white text-slate-800 text-[8px] sm:text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-amber-400"
         style={{
           left: seatLayouts[hand.dealer_seat]?.left,
           top: seatLayouts[hand.dealer_seat]?.top,
-          transform: 'translate(-50%, -50%) translateY(-26px)'
+          transform: 'translate(-50%, -50%) translateY(-22px)'
         }}
       >
         D
@@ -157,9 +158,9 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
           const isMe = player.player_id === myPlayerId;
 
           let statusBadge = null;
-          if (isFolded) statusBadge = <span className="text-[10px] text-slate-400 font-medium">弃牌</span>;
-          else if (isAllIn) statusBadge = <span className="text-[10px] text-amber-400 font-bold">All-in</span>;
-          else if (isCurrent) statusBadge = <span className="text-[10px] text-emerald-300 font-bold animate-pulse">行动中</span>;
+          if (isFolded) statusBadge = <span className="text-[9px] sm:text-[10px] text-slate-400 font-medium">Fold</span>;
+          else if (isAllIn) statusBadge = <span className="text-[9px] sm:text-[10px] text-amber-400 font-bold">All-in</span>;
+          else if (isCurrent) statusBadge = <span className="text-[9px] sm:text-[10px] text-emerald-300 font-bold animate-pulse">Turn</span>;
 
           const holeCards = (() => {
             try {
@@ -180,20 +181,18 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
               className="absolute z-20"
               style={{ left: pos.left, top: pos.top, transform: 'translate(-50%, -50%)' }}
             >
-              {/* Current turn glow ring */}
               {isCurrent && !isFolded && (
                 <motion.div
-                  className="absolute inset-[-6px] rounded-2xl border-2 border-amber-400/60 pointer-events-none"
+                  className="absolute inset-[-4px] sm:inset-[-6px] rounded-xl sm:rounded-2xl border-2 border-amber-400/60 pointer-events-none"
                   animate={{ opacity: [0.4, 1, 0.4] }}
                   transition={{ duration: 1.5, repeat: Infinity }}
                 />
               )}
 
-              <div className={`flex flex-col items-center gap-0.5 px-1.5 sm:px-2 py-1 sm:py-1.5 rounded-xl transition-all min-w-[64px] sm:min-w-[72px] ${
+              <div className={`flex flex-col items-center gap-0.5 px-1 sm:px-1.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl transition-all min-w-[56px] sm:min-w-[64px] ${
                 isCurrent ? 'bg-white/15 scale-105' : 'bg-black/40'
               } ${isFolded ? 'opacity-45' : ''} backdrop-blur-sm`}>
 
-                {/* Bet chip above player */}
                 <AnimatePresence>
                   {player.current_bet > 0 && (
                     <motion.div
@@ -202,27 +201,26 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
                       animate={{ y: 0, opacity: 1, scale: 1 }}
                       exit={{ y: -10, opacity: 0 }}
                       transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                      className="absolute -top-5 left-1/2 -translate-x-1/2"
+                      className="absolute -top-4 sm:-top-5 left-1/2 -translate-x-1/2"
                     >
-                      <div className="text-[10px] font-bold text-amber-300 bg-black/60 px-2 py-0.5 rounded-full whitespace-nowrap border border-amber-500/30">
+                      <div className="text-[9px] sm:text-[10px] font-bold text-amber-300 bg-black/60 px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap border border-amber-500/30">
                         {player.current_bet}
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
-                <div className="flex items-center gap-1 sm:gap-1.5">
+                <div className="flex items-center gap-1">
                   <Avatar nickname={player.nickname || '?'} src={player.avatar} size="sm" />
                   <div className="text-center leading-tight">
-                    <div className="text-[10px] sm:text-[11px] font-bold text-white truncate max-w-[50px] sm:max-w-[60px]">
+                    <div className="text-[9px] sm:text-[10px] font-bold text-white truncate max-w-[40px] sm:max-w-[50px]">
                       {player.nickname || '?'}
                     </div>
-                    <div className="text-[10px] text-emerald-300 font-mono">{player.current_chips}</div>
+                    <div className="text-[9px] sm:text-[10px] text-emerald-300 font-mono">{player.current_chips}</div>
                     {statusBadge}
                   </div>
                 </div>
 
-                {/* Hole cards */}
                 <div className="flex gap-0.5 mt-0.5">
                   {(isMe || isHost) ? (
                     <HoleCards cards={holeCards} animate />
@@ -233,18 +231,24 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
                       animate={{ rotateY: 0 }}
                       transition={{ duration: 0.5, delay: 0.3 }}
                     >
-                      <div className="w-5 h-7 rounded bg-gradient-to-br from-blue-700 to-blue-900 border border-white/10" />
-                      <div className="w-5 h-7 rounded bg-gradient-to-br from-blue-700 to-blue-900 border border-white/10" />
+                      <div className="w-4 h-6 sm:w-5 sm:h-7 rounded bg-gradient-to-br from-blue-700 to-blue-900 border border-white/10" />
+                      <div className="w-4 h-6 sm:w-5 sm:h-7 rounded bg-gradient-to-br from-blue-700 to-blue-900 border border-white/10" />
                     </motion.div>
                   )}
                 </div>
               </div>
+
+              {isCurrent && !isFolded && (
+                <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 w-16 sm:w-20">
+                  <ActionTimer isActive={true} />
+                </div>
+              )}
             </motion.div>
           );
         })}
       </AnimatePresence>
 
-      {/* Action panel at bottom */}
+      {/* Action panel */}
       <AnimatePresence>
         {isMyTurn && myPlayer && (
           <motion.div
@@ -252,7 +256,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 30, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            className="absolute bottom-1 left-1/2 -translate-x-1/2 w-full max-w-sm z-30 px-2"
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-xs sm:max-w-sm z-30 px-1 sm:px-2"
           >
             <ActionPanel
               currentBet={Math.max(...(handPlayers?.map(p => p.current_bet) || [0]))}
@@ -265,22 +269,22 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
         )}
       </AnimatePresence>
 
-      {/* Start new hand button for host when hand ended */}
+      {/* Start new hand button */}
       <AnimatePresence>
         {isHost && (hand.status === 'completed' || hand.status === 'showdown') && (
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             exit={{ scale: 0 }}
-            className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30"
+            className="absolute bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 z-30"
           >
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => { setShowResult(false); onStartHand(); }}
-              className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-full transition shadow-lg text-sm"
+              className="px-5 sm:px-6 py-2 sm:py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-full transition shadow-lg text-xs sm:text-sm"
             >
-              开始新一手
+              Start New Hand
             </motion.button>
           </motion.div>
         )}
@@ -289,11 +293,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
       {/* Hand result overlay */}
       <AnimatePresence>
         {(hand.status === 'completed' || hand.status === 'showdown') && showResult && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <HandResult handState={handState} onClose={() => setShowResult(false)} />
           </motion.div>
         )}
@@ -306,15 +306,15 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             exit={{ scale: 0 }}
-            className="absolute top-3 right-3 z-30"
+            className="absolute top-2 sm:top-3 right-2 sm:right-3 z-30"
           >
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setShowResult(true)}
-              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-full transition shadow"
+              className="px-2 sm:px-3 py-1 sm:py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[10px] sm:text-xs font-semibold rounded-full transition shadow"
             >
-              查看结果
+              Result
             </motion.button>
           </motion.div>
         )}

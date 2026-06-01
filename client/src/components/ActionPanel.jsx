@@ -14,11 +14,11 @@ export default function ActionPanel({ currentBet = 0, myBet = 0, myChips = 0, bi
   const handleRaise = () => {
     const amount = parseInt(raiseAmount, 10);
     if (!amount || amount < minRaise) {
-      alert(`最小加注额为 ${minRaise}`);
+      alert(`Min raise: ${minRaise}`);
       return;
     }
     if (amount > maxRaise) {
-      alert(`最大加注额为 ${maxRaise}`);
+      alert(`Max raise: ${maxRaise}`);
       return;
     }
     onAction('raise', amount);
@@ -30,51 +30,51 @@ export default function ActionPanel({ currentBet = 0, myBet = 0, myChips = 0, bi
   };
 
   return (
-    <div className="bg-slate-800 rounded-xl p-4 space-y-3">
-      <div className="flex items-center justify-between text-sm text-slate-300">
-        <span>当前下注: <span className="text-white font-semibold">{currentBet}</span></span>
-        <span>你的筹码: <span className="text-emerald-400 font-semibold">{myChips}</span></span>
+    <div className="bg-slate-800 rounded-xl p-3 sm:p-4 space-y-2 sm:space-y-3">
+      <div className="flex items-center justify-between text-xs sm:text-sm text-slate-300">
+        <span>Bet: <span className="text-white font-semibold">{currentBet}</span></span>
+        <span>Chips: <span className="text-emerald-400 font-semibold">{myChips}</span></span>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Button variant="danger" size="lg" disabled={disabled} onClick={() => onAction('fold')}>
-          弃牌
+      <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
+        <Button variant="danger" size="sm" disabled={disabled} onClick={() => onAction('fold')}>
+          Fold
         </Button>
 
         {canCheck ? (
-          <Button variant="secondary" size="lg" disabled={disabled} onClick={() => onAction('check')}>
-            过牌
+          <Button variant="secondary" size="sm" disabled={disabled} onClick={() => onAction('check')}>
+            Check
           </Button>
         ) : canCall ? (
-          <Button variant="primary" size="lg" disabled={disabled} onClick={() => onAction('call', toCall)}>
-            跟注 {toCall}
+          <Button variant="primary" size="sm" disabled={disabled} onClick={() => onAction('call', toCall)}>
+            Call {toCall}
           </Button>
         ) : (
-          <Button variant="ghost" size="lg" disabled={true}>
-            无法跟注
+          <Button variant="ghost" size="sm" disabled={true}>
+            -
           </Button>
         )}
 
+        <Button variant="success" size="sm" disabled={disabled || myChips <= 0} onClick={handleAllIn}>
+          All-in
+        </Button>
+
         {canRaise && (
-          <div className="flex items-center gap-2">
+          <div className="col-span-3 flex items-center gap-1.5 sm:gap-2 mt-1">
             <input
               type="number"
-              placeholder={`加注 (${minRaise}-${maxRaise})`}
-              className="w-28 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm"
+              placeholder={`Raise ${minRaise}-${maxRaise}`}
+              className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-xs sm:text-sm"
               value={raiseAmount}
               onChange={e => setRaiseAmount(e.target.value)}
               min={minRaise}
               max={maxRaise}
             />
-            <Button variant="warning" size="lg" disabled={disabled} onClick={handleRaise}>
-              加注
+            <Button variant="warning" size="sm" disabled={disabled} onClick={handleRaise}>
+              Raise
             </Button>
           </div>
         )}
-
-        <Button variant="success" size="lg" disabled={disabled || myChips <= 0} onClick={handleAllIn}>
-          全下 {myChips}
-        </Button>
       </div>
     </div>
   );

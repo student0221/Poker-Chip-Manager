@@ -303,11 +303,11 @@ export default function RoomPage() {
           </Card>
         )}
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             {room.status === 'running' && isCashMode && (
               <>
-                <Card className="p-3 sm:p-4">
+                <Card className="p-1 sm:p-4 overflow-hidden">
                   <PokerTable
                     handState={handState}
                     myPlayerId={myPlayerId}
@@ -324,23 +324,23 @@ export default function RoomPage() {
                 )}
               </>
             )}
-            <Card className="p-6">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h2 className="text-lg font-bold text-slate-800">玩家列表 ({players.length})</h2>
+            <Card className="p-3 sm:p-6">
+              <div className="flex items-center justify-between gap-3 mb-3 sm:mb-4">
+                <h2 className="text-base sm:text-lg font-bold text-slate-800">玩家列表 ({players.length})</h2>
                 <Button variant="ghost" size="sm" onClick={() => refresh().catch(err => setMessage(err.message))}>刷新</Button>
               </div>
               {players.length === 0 ? (
-                <div className="text-center text-slate-400 py-8">暂无玩家。</div>
+                <div className="text-center text-slate-400 py-6 sm:py-8">暂无玩家。</div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3">
                   {players.map(player => (
-                    <div key={player.id} className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <Avatar nickname={player.nickname} src={player.avatar} size="md" />
+                    <div key={player.id} className="p-3 sm:p-4 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <Avatar nickname={player.nickname} src={player.avatar} size="sm" />
                           <div>
-                            <div className="font-bold text-slate-800">{sanitizeText(player.nickname)}</div>
-                            <div className="text-xs text-slate-500">入场 {player.initial_chips} 筹码{player.left_at ? ` · 已离场 ${player.final_chips}` : ''}</div>
+                            <div className="text-sm sm:text-base font-bold text-slate-800">{sanitizeText(player.nickname)}</div>
+                            <div className="text-[11px] sm:text-xs text-slate-500">入场 {player.initial_chips} 筹码{player.left_at ? ` · 已离场 ${player.final_chips}` : ''}</div>
                           </div>
                         </div>
                         {isHost && room.status === 'running' && !player.left_at && (
@@ -397,13 +397,13 @@ export default function RoomPage() {
             )}
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {room.status === 'running' && (
               <Card>
-                <div className="p-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white">
-                  <h2 className="font-bold">玩家报名</h2>
+                <div className="p-4 sm:p-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+                  <h2 className="font-bold text-sm sm:text-base">玩家报名</h2>
                 </div>
-                <form onSubmit={handleJoin} className="p-5 space-y-4">
+                <form onSubmit={handleJoin} className="p-4 sm:p-5 space-y-3 sm:space-y-4">
                   <Input label="昵称" value={joinForm.nickname} onChange={e => setJoinForm({ ...joinForm, nickname: e.target.value })} required />
                   <Input label="入场筹码" type="number" value={joinForm.initial_chips} onChange={e => setJoinForm({ ...joinForm, initial_chips: e.target.value })} required />
                   <Button type="submit" variant="primary" size="lg">提交报名</Button>
@@ -413,10 +413,10 @@ export default function RoomPage() {
 
             {isHost && ['pending', 'running', 'settling'].includes(room.status) && (
               <Card>
-                <div className="p-5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
-                  <h2 className="font-bold">房主加人</h2>
+                <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+                  <h2 className="font-bold text-sm sm:text-base">房主加人</h2>
                 </div>
-                <form onSubmit={handleAdminAdd} className="p-5 space-y-4">
+                <form onSubmit={handleAdminAdd} className="p-4 sm:p-5 space-y-3 sm:space-y-4">
                   <Input label="昵称" value={adminForm.nickname} onChange={e => setAdminForm({ ...adminForm, nickname: e.target.value })} required />
                   <Input label="入场筹码" type="number" value={adminForm.initial_chips} onChange={e => setAdminForm({ ...adminForm, initial_chips: e.target.value })} required />
                   <Button type="submit" variant="success" size="lg">添加玩家</Button>
@@ -426,10 +426,10 @@ export default function RoomPage() {
 
             {room.status === 'settling' && (
               <Card>
-                <div className="p-5 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
-                  <h2 className="font-bold">提交最终筹码</h2>
+                <div className="p-4 sm:p-5 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+                  <h2 className="font-bold text-sm sm:text-base">提交最终筹码</h2>
                 </div>
-                <form onSubmit={handleSubmitFinal} className="p-5 space-y-4">
+                <form onSubmit={handleSubmitFinal} className="p-4 sm:p-5 space-y-3 sm:space-y-4">
                   <Input label="昵称" value={finalForm.nickname} onChange={e => setFinalForm({ ...finalForm, nickname: e.target.value })} required />
                   <Input label="最终筹码" type="number" value={finalForm.final_chips} onChange={e => setFinalForm({ ...finalForm, final_chips: e.target.value })} required />
                   <Button type="submit" variant="warning" size="lg">提交</Button>
@@ -438,8 +438,8 @@ export default function RoomPage() {
             )}
 
             {isCashMode && handHistory.length > 0 && (
-              <Card className="p-4">
-                <h2 className="text-sm font-bold text-slate-800 mb-3">历史手牌</h2>
+              <Card className="p-3 sm:p-4">
+                <h2 className="text-sm font-bold text-slate-800 mb-2 sm:mb-3">历史手牌</h2>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {handHistory.map((h, idx) => (
                     <div key={h.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-slate-50">
