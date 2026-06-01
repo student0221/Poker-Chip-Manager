@@ -7,6 +7,7 @@ import {
   deleteRoom,
   endRoom,
   getCurrentHand,
+  getHandHistory,
   getDeviceId,
   getNetworkInfo,
   getRoom,
@@ -85,16 +86,27 @@ export default function RoomPage() {
       setRankings(null);
     }
 
-    // Fetch current hand for cash mode
-    if (nextRoom.game_mode === 'cash' && nextRoom.current_hand_id) {
+    // Fetch current hand and history for cash mode
+    if (nextRoom.game_mode === 'cash') {
       try {
-        const currentHand = await getCurrentHand(roomId);
-        setHandState(currentHand?.hand ? currentHand : null);
+        const history = await getHandHistory(roomId);
+        setHandHistory(history.hands || []);
       } catch {
+        setHandHistory([]);
+      }
+      if (nextRoom.current_hand_id) {
+        try {
+          const currentHand = await getCurrentHand(roomId);
+          setHandState(currentHand?.hand ? currentHand : null);
+        } catch {
+          setHandState(null);
+        }
+      } else {
         setHandState(null);
       }
     } else {
       setHandState(null);
+      setHandHistory([]);
     }
   };
 
@@ -421,6 +433,25 @@ export default function RoomPage() {
                   <Input label="最终筹码" type="number" value={finalForm.final_chips} onChange={e => setFinalForm({ ...finalForm, final_chips: e.target.value })} required />
                   <Button type="submit" variant="warning" size="lg">提交</Button>
                 </form>
+              </Card>
+            )}
+
+            {isCashMode && handHistory.length > 0 && (
+              <Card className="p-4">
+                <h2 className="text-sm font-bold text-slate-800 mb-3">历史手牌</h2>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {handHistory.map((h, idx) => (
+                    <div key={h.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-slate-50">
+                      <div>
+                        <span className="font-medium text-slate-700">#{handHistory.length - idx}</span>
+                        <span className="text-slate-400 ml-1">{h.status === 'showdown' ? '摊牌' : '提前结束'}</span>
+                      </div>
+                      <div className="text-slate-500">
+                        底池 {h.total_pot}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </Card>
             )}
           </div>
