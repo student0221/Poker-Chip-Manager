@@ -100,6 +100,7 @@ export default function AdminPage() {
       return;
     }
     const formatted = parseFloat(num.toFixed(2));
+    setRateInput(formatted.toFixed(2));
     const res = await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -192,7 +193,7 @@ export default function AdminPage() {
     const res = await fetch(`/api/players/${id}/final`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ final_chips: chips })
+      body: JSON.stringify({ final_chips: chips, admin_secret: 'admin123' })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
