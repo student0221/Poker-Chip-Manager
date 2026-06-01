@@ -54,6 +54,7 @@ export default function RoomPage() {
   const [message, setMessage] = useState('');
   const [myPlayerId, setMyPlayerId] = useState(null);
   const [handState, setHandState] = useState(null);
+  const [handHistory, setHandHistory] = useState([]);
 
   const isHost = room?.host_device_id === getDeviceId();
   const isCashMode = room?.game_mode === 'cash';

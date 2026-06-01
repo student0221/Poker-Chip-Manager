@@ -78,6 +78,17 @@ export default function RoomsPage() {
     if (code) navigate(`/room/${code}`);
   };
 
+  const handleDeleteRoom = async (roomId) => {
+    if (!window.confirm('Are you sure you want to delete this room?')) return;
+    setMessage('');
+    try {
+      await deleteRoom(roomId);
+      await refresh();
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50">
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
