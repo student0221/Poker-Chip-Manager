@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createRoom, getDeviceId, getDiscoveredHosts, getNetworkInfo, getRooms } from '../api';
+import { createRoom, deleteRoom, getDeviceId, getDiscoveredHosts, getNetworkInfo, getRooms } from '../api';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import InviteQRCode from '../components/InviteQRCode';
@@ -207,6 +207,9 @@ export default function RoomsPage() {
                       <Link to={`/room/${room.id}`}>
                         <Button variant="primary">进入</Button>
                       </Link>
+                      {room.host_device_id === getDeviceId() && (
+                        <Button variant="danger" size="sm" onClick={() => handleDeleteRoom(room.id)}>解散</Button>
+                      )}
                     </div>
                   </div>
                 </div>
