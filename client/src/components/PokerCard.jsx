@@ -16,6 +16,7 @@ const SUIT_COLORS = {
 
 export default function PokerCard({ card, faceDown = false, size = 'md', animate = false }) {
   const sizeClasses = {
+    xs: 'w-5 h-8 text-[10px]',
     sm: 'w-8 h-12 text-sm',
     md: 'w-10 h-14 text-base',
     lg: 'w-12 h-18 text-lg'

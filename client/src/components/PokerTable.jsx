@@ -16,6 +16,33 @@ const ROUND_NAMES = {
   showdown: '摊牌'
 };
 
+const POSITION_BADGES = {
+  dealer: {
+    label: '庄',
+    shortLabel: 'D',
+    className: 'bg-white text-slate-900 border-amber-400'
+  },
+  smallBlind: {
+    label: '小盲',
+    shortLabel: 'SB',
+    className: 'bg-sky-100 text-sky-900 border-sky-400'
+  },
+  bigBlind: {
+    label: '大盲',
+    shortLabel: 'BB',
+    className: 'bg-amber-100 text-amber-900 border-amber-500'
+  }
+};
+
+function getPositionBadges(hand, seatIndex) {
+  if (!hand) return [];
+  const badges = [];
+  if (hand.dealer_seat === seatIndex) badges.push(POSITION_BADGES.dealer);
+  if (hand.small_blind_seat === seatIndex) badges.push(POSITION_BADGES.smallBlind);
+  if (hand.big_blind_seat === seatIndex) badges.push(POSITION_BADGES.bigBlind);
+  return badges;
+}
+
 function getSeatLayout(mySeat, totalSeats, isMobile) {
   if (totalSeats <= 0) return [];
   const angleStep = 360 / totalSeats;
@@ -67,6 +94,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
 
   const totalSeats = handPlayers?.length || 0;
   const mySeat = myPlayer?.seat ?? 0;
+  const isCrowdedMobile = isMobile && totalSeats >= 7;
   const seatLayouts = useMemo(() => getSeatLayout(mySeat, totalSeats, isMobile), [mySeat, totalSeats, isMobile]);
   const centerTopClass = isMobile ? 'top-[51%]' : 'top-[44%]';
   const getPlayerAtSeat = (seat) => handPlayers?.find(p => p.seat === seat);
@@ -75,7 +103,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
   if (!hand) {
     return (
       <div className="flex flex-col items-center justify-center py-6 sm:py-12 space-y-3 sm:space-y-4">
-        <div className="text-slate-400 text-xs sm:text-sm">No hand in progress</div>
+        <div className="text-slate-400 text-xs sm:text-sm">暂无进行中的牌局</div>
         {isHost && (
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -83,7 +111,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
             onClick={onStartHand}
             className="px-4 sm:px-5 py-2 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition shadow-lg text-xs sm:text-sm"
           >
-            Start New Hand
+            开始新一手
           </motion.button>
         )}
       </div>
@@ -143,22 +171,6 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
         )}
       </div>
 
-      {/* Dealer button */}
-      <motion.div
-        key={`dealer-${hand.dealer_seat}-${handKey}`}
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
-        transition={{ type: 'spring', stiffness: 500, damping: 15 }}
-        className="absolute z-10 w-4 h-4 sm:w-7 sm:h-7 rounded-full bg-white text-slate-800 text-[7px] sm:text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-amber-400"
-        style={{
-          left: seatLayouts[hand.dealer_seat]?.left,
-          top: seatLayouts[hand.dealer_seat]?.top,
-          transform: 'translate(-50%, -50%) translateY(-18px)'
-        }}
-      >
-        D
-      </motion.div>
-
       {/* Player seats */}
       <AnimatePresence>
         {seatLayouts.map((pos, seatIndex) => {
@@ -169,11 +181,12 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
           const isFolded = !!player.is_folded;
           const isAllIn = !!player.is_all_in;
           const isMe = player.player_id === myPlayerId;
+          const positionBadges = getPositionBadges(hand, seatIndex);
 
           let statusBadge = null;
-          if (isFolded) statusBadge = <span className="text-[8px] sm:text-[10px] text-slate-400 font-medium">Fold</span>;
-          else if (isAllIn) statusBadge = <span className="text-[8px] sm:text-[10px] text-amber-400 font-bold">All-in</span>;
-          else if (isCurrent) statusBadge = <span className="text-[8px] sm:text-[10px] text-emerald-300 font-bold animate-pulse">Turn</span>;
+          if (isFolded) statusBadge = <span className="text-[8px] sm:text-[10px] text-slate-400 font-medium">弃牌</span>;
+          else if (isAllIn) statusBadge = <span className="text-[8px] sm:text-[10px] text-amber-400 font-bold">全下</span>;
+          else if (isCurrent) statusBadge = <span className="text-[8px] sm:text-[10px] text-emerald-300 font-bold animate-pulse">行动</span>;
 
           const holeCards = (() => {
             try {
@@ -202,7 +215,22 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
                 />
               )}
 
-              <div className={`flex flex-col items-center gap-0.5 px-0.5 sm:px-1.5 py-0.5 sm:py-1 rounded-md sm:rounded-xl transition-all min-w-[44px] sm:min-w-[64px] ${
+              {positionBadges.length > 0 && (
+                <div className="absolute -top-4 sm:-top-6 left-1/2 z-30 flex -translate-x-1/2 items-center justify-center gap-0.5 whitespace-nowrap">
+                  {positionBadges.map((badge) => (
+                    <div
+                      key={badge.shortLabel}
+                      className={`rounded-full border px-1.5 py-0.5 text-[8px] font-black leading-none shadow-md sm:px-2 sm:text-[10px] ${badge.className}`}
+                      title={`${badge.label} (${badge.shortLabel})`}
+                    >
+                      <span className="hidden sm:inline">{badge.label}</span>
+                      <span className="sm:hidden">{badge.shortLabel}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className={`flex flex-col items-center gap-0.5 px-0.5 sm:px-1.5 py-0.5 sm:py-1 rounded-md sm:rounded-xl transition-all ${isCrowdedMobile ? 'min-w-[36px]' : 'min-w-[44px]'} sm:min-w-[64px] ${
                 isCurrent ? 'bg-white/15 scale-105' : 'bg-black/40'
               } ${isFolded ? 'opacity-45' : ''} backdrop-blur-sm`}>
 
@@ -214,7 +242,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
                       animate={{ y: 0, opacity: 1, scale: 1 }}
                       exit={{ y: -10, opacity: 0 }}
                       transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                      className="absolute -top-3.5 sm:-top-5 left-1/2 -translate-x-1/2"
+                      className={`absolute left-1/2 -translate-x-1/2 ${positionBadges.length > 0 ? '-top-8 sm:-top-11' : '-top-3.5 sm:-top-5'}`}
                     >
                       <div className="text-[8px] sm:text-[10px] font-bold text-amber-300 bg-black/60 px-1 sm:px-2 py-0.5 rounded-full whitespace-nowrap border border-amber-500/30">
                         {player.current_bet}
@@ -236,7 +264,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
 
                 <div className="flex gap-0.5 mt-0.5">
                   {(isMe || isHost) ? (
-                    <HoleCards cards={holeCards} animate />
+                    <HoleCards cards={holeCards} size={isCrowdedMobile ? 'xs' : 'sm'} animate />
                   ) : (
                     <motion.div
                       className="flex gap-0.5"
@@ -295,7 +323,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
               onClick={() => { setShowResult(false); onStartHand(); }}
               className="px-3 sm:px-6 py-1.5 sm:py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-full transition shadow-lg text-[10px] sm:text-sm"
             >
-              Start New Hand
+              开始新一手
             </motion.button>
           </motion.div>
         )}
@@ -325,7 +353,7 @@ export default function PokerTable({ handState, myPlayerId, isHost, onAction, on
               onClick={() => setShowResult(true)}
               className="px-1.5 sm:px-3 py-0.5 sm:py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[9px] sm:text-xs font-semibold rounded-full transition shadow"
             >
-              Result
+              结果
             </motion.button>
           </motion.div>
         )}

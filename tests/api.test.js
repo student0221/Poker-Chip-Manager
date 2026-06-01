@@ -580,20 +580,113 @@ test('cash game uses room blinds, timeout setting, and automatic timeout actions
     .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
     .send({ action: 'call', amount: 15, device_id: 'timeout-alice' });
   expect(actionRes.status).toBe(200);
+
+  actionRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'check', device_id: 'timeout-bob' });
+  expect(actionRes.status).toBe(200);
   expect(actionRes.body.advanced).toBe(true);
 
   const timeoutCheck = await new Promise((resolve, reject) => {
     processTimeoutAction(handRes.body.handId, (err, result) => err ? reject(err) : resolve(result));
   });
-  expect(timeoutCheck).toMatchObject({ timedOut: true, playerId: aliceRes.body.id, action: 'check' });
+  expect(timeoutCheck).toMatchObject({ timedOut: true, playerId: bobRes.body.id, action: 'check' });
 
   actionRes = await request(app)
     .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
-    .send({ action: 'raise', amount: 30, device_id: 'timeout-bob' });
+    .send({ action: 'raise', amount: 30, device_id: 'timeout-alice' });
   expect(actionRes.status).toBe(200);
 
   const timeoutFold = await new Promise((resolve, reject) => {
     processTimeoutAction(handRes.body.handId, (err, result) => err ? reject(err) : resolve(result));
   });
-  expect(timeoutFold).toMatchObject({ timedOut: true, playerId: aliceRes.body.id, action: 'fold', ended: true });
+  expect(timeoutFold).toMatchObject({ timedOut: true, playerId: bobRes.body.id, action: 'fold', ended: true });
+});
+
+test('cash game supports nine-player preflop order and postflop first action', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Nine Max', chip_rate: 1, device_id: 'nine-host', game_mode: 'cash', sb_amount: 10, bb_amount: 20 });
+  expect(roomRes.status).toBe(201);
+  const roomId = roomRes.body.id;
+
+  await request(app)
+    .post(`/api/rooms/${roomId}/start`)
+    .send({ device_id: 'nine-host' });
+
+  for (let i = 0; i < 9; i++) {
+    const playerRes = await request(app)
+      .post(`/api/rooms/${roomId}/players/join`)
+      .send({ name: `P${i}`, nickname: `P${i}`, initial_chips: 1000, device_id: `nine-p${i}` });
+    expect(playerRes.status).toBe(201);
+  }
+
+  const handRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands`)
+    .send({ device_id: 'nine-host' });
+  expect(handRes.status).toBe(201);
+  expect(handRes.body).toMatchObject({ status: 'preflop', currentSeat: 3 });
+
+  for (const seat of [3, 4, 5, 6, 7, 8, 0]) {
+    const callRes = await request(app)
+      .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+      .send({ action: 'call', amount: 20, device_id: `nine-p${seat}` });
+    expect(callRes.status).toBe(200);
+    expect(callRes.body.nextSeat).toBe((seat + 1) % 9);
+  }
+
+  const sbCallRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'call', amount: 10, device_id: 'nine-p1' });
+  expect(sbCallRes.status).toBe(200);
+  expect(sbCallRes.body.nextSeat).toBe(2);
+
+  const bbCheckRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'check', device_id: 'nine-p2' });
+  expect(bbCheckRes.status).toBe(200);
+  expect(bbCheckRes.body).toMatchObject({ advanced: true, newRound: 'flop' });
+
+  const state = await request(app)
+    .get(`/api/rooms/${roomId}/hands/current`)
+    .set('x-device-id', 'nine-host');
+  expect(state.status).toBe(200);
+  expect(state.body.hand).toMatchObject({ current_round: 'flop', current_seat: 1 });
+  expect(state.body.players).toHaveLength(9);
+});
+
+test('cash game raise amount is treated as target bet amount', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Raise Target', chip_rate: 1, device_id: 'raise-host', game_mode: 'cash', sb_amount: 10, bb_amount: 20 });
+  expect(roomRes.status).toBe(201);
+  const roomId = roomRes.body.id;
+
+  await request(app)
+    .post(`/api/rooms/${roomId}/start`)
+    .send({ device_id: 'raise-host' });
+
+  const aliceRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Alice', nickname: 'Raise Alice', initial_chips: 1000, device_id: 'raise-alice' });
+  const bobRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Bob', nickname: 'Raise Bob', initial_chips: 1000, device_id: 'raise-bob' });
+  expect(aliceRes.status).toBe(201);
+  expect(bobRes.status).toBe(201);
+
+  const handRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands`)
+    .send({ device_id: 'raise-host' });
+  expect(handRes.status).toBe(201);
+
+  const raiseRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'raise', amount: 40, device_id: 'raise-alice' });
+  expect(raiseRes.status).toBe(200);
+
+  const aliceHand = await get('SELECT current_bet, current_chips, total_bet FROM hand_players WHERE hand_id=? AND player_id=?', [handRes.body.handId, aliceRes.body.id]);
+  const alicePlayer = await get('SELECT initial_chips FROM players WHERE id=?', [aliceRes.body.id]);
+  expect(aliceHand).toMatchObject({ current_bet: 40, current_chips: 960, total_bet: 40 });
+  expect(alicePlayer.initial_chips).toBe(960);
 });

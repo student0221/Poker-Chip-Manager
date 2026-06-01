@@ -1,4 +1,5 @@
 const SIZE_MAP = {
+  xs: 'w-5 h-5 text-[9px]',
   sm: 'w-8 h-8 text-sm',
   md: 'w-10 h-10 text-base',
   lg: 'w-16 h-16 text-xl',

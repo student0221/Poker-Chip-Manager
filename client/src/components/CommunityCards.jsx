@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import PokerCard from './PokerCard';
 
-export default function CommunityCards({ cards = [] }) {
+export default function CommunityCards({ cards = [], size = 'lg' }) {
   // Always show 5 slots
   const slots = [0, 1, 2, 3, 4];
   const prevCountRef = useRef(0);
@@ -20,7 +20,7 @@ export default function CommunityCards({ cards = [] }) {
             key={i}
             card={cards[i] || null}
             faceDown={!hasCard}
-            size="lg"
+            size={size}
             animate={isNew}
           />
         );

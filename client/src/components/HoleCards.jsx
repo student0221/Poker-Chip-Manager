@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import PokerCard from './PokerCard';
 
-export default function HoleCards({ cards = [], label, animate = false }) {
+export default function HoleCards({ cards = [], label, animate = false, size = 'sm' }) {
   const cardList = Array.isArray(cards) ? cards : [];
 
   return (
@@ -13,8 +13,8 @@ export default function HoleCards({ cards = [], label, animate = false }) {
         animate={{ scale: 1, opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
       >
-        <PokerCard card={cardList[0] || null} faceDown={!cardList[0]} size="sm" />
-        <PokerCard card={cardList[1] || null} faceDown={!cardList[1]} size="sm" />
+        <PokerCard card={cardList[0] || null} faceDown={!cardList[0]} size={size} />
+        <PokerCard card={cardList[1] || null} faceDown={!cardList[1]} size={size} />
       </motion.div>
     </div>
   );

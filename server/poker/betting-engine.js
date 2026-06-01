@@ -25,6 +25,7 @@ function validateAction(player, action, amount, tableState) {
   }
 
   const toCall = currentBet - player.current_bet;
+  const contributionToRaise = amount - player.current_bet;
 
   switch (action) {
     case 'fold':
@@ -59,7 +60,10 @@ function validateAction(player, action, amount, tableState) {
       if (amount < minRaise) {
         return { valid: false, error: `Minimum raise is ${minRaise}` };
       }
-      if (player.current_chips < amount) {
+      if (contributionToRaise <= 0) {
+        return { valid: false, error: 'Raise must increase your bet' };
+      }
+      if (player.current_chips < contributionToRaise) {
         return { valid: false, error: 'Not enough chips for this raise' };
       }
       return { valid: true };

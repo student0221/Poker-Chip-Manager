@@ -5,6 +5,14 @@ const { validateAction, isRoundComplete, getNextSeat, calculatePots, distributeP
 
 const ROUNDS = ['preflop', 'flop', 'turn', 'river'];
 
+function getFirstActiveSeatAfterDealer(hand, handPlayers) {
+  const activeSeats = handPlayers
+    .filter(p => !p.is_folded && !p.is_all_in)
+    .map(p => p.seat)
+    .sort((a, b) => a - b);
+  return getNextSeat(activeSeats, hand.dealer_seat, handPlayers) ?? activeSeats[0] ?? null;
+}
+
 function startHand(roomId, options, callback) {
   const { sb = 10, bb = 20, dealerSeat, actionTimeoutSeconds = 30 } = options || {};
 
@@ -205,7 +213,7 @@ function processAction(handId, playerId, action, amount, callback) {
 
     const roomId = hand.room_id;
     const currentBet = Math.max(...handPlayers.map(p => p.current_bet));
-    const lastRaise = calculateLastRaise(state.actions, hand.current_round);
+    const lastRaise = hand.current_min_raise || hand.big_blind_amount;
 
     const validation = validateAction(
       { ...hp, current_bet: hp.current_bet },
@@ -242,8 +250,8 @@ function processAction(handId, playerId, action, amount, callback) {
       actualAmount = Math.min(toCall, hp.current_chips);
       if (actualAmount < toCall) isAllIn = true;
     } else if (action === 'raise') {
-      actualAmount = Math.min(amount, hp.current_chips);
-      if (actualAmount < amount) isAllIn = true;
+      actualAmount = Math.min(amount - hp.current_bet, hp.current_chips);
+      if (actualAmount < amount - hp.current_bet) isAllIn = true;
     } else if (action === 'all-in') {
       actualAmount = hp.current_chips;
       isAllIn = true;
@@ -326,7 +334,10 @@ function processAction(handId, playerId, action, amount, callback) {
           }
 
           // Check if round is complete
-          const actionsInRound = state.actions.filter(a => a.round === hand.current_round);
+          const actionsInRound = state.actions.filter(a =>
+            a.round === hand.current_round &&
+            !['small_blind', 'big_blind'].includes(a.action_type)
+          );
           const hasActed = new Set(actionsInRound.map(a => a.seat));
           // Also include the current action
           hasActed.add(hp.seat);
@@ -355,8 +366,7 @@ function processAction(handId, playerId, action, amount, callback) {
               const allCommunity = [...existingCards, ...newCards];
 
               // Reset current_bet for all players in new round
-              const activeSeats = notFoldedNotAllIn.map(p => p.seat).sort((a, b) => a - b);
-              const nextSeat = activeSeats[0]; // First to act in post-flop is first active seat after dealer
+              const nextSeat = getFirstActiveSeatAfterDealer(hand, notFoldedNotAllIn);
 
               db.run(
               'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=?, current_bet=0, current_min_raise=?, total_pot=?, action_started_at=? WHERE id=?',
@@ -387,7 +397,8 @@ function processAction(handId, playerId, action, amount, callback) {
             // Find next active seat
             const activeSeats = notFoldedNotAllIn.map(p => p.seat).sort((a, b) => a - b);
             const nextSeat = getNextSeat(activeSeats, hp.seat, newHps);
-            const newMinRaise = Math.max(hand.current_min_raise, actualAmount > 0 ? actualAmount : hand.current_min_raise);
+            const raiseAmount = action === 'raise' ? newBet - currentBet : 0;
+            const newMinRaise = raiseAmount > 0 ? raiseAmount : hand.current_min_raise;
 
             db.run(
               'UPDATE hands SET current_seat=?, current_bet=?, current_min_raise=?, total_pot=total_pot+?, action_started_at=? WHERE id=?',
