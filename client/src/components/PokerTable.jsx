@@ -5,6 +5,7 @@ import CommunityCards from './CommunityCards';
 import HandResult from './HandResult';
 import HoleCards from './HoleCards';
 import ActionPanel from './ActionPanel';
+import ActionTimer from './ActionTimer';
 import PotDisplay from './PotDisplay';
 
 const ROUND_NAMES = {

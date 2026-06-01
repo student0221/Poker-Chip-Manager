@@ -27,6 +27,7 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import InviteQRCode from '../components/InviteQRCode';
 import Input from '../components/Input';
+import HandHistory from '../components/HandHistory';
 import PokerTable from '../components/PokerTable';
 import ProfitDisplay from '../components/ProfitDisplay';
 import StatusBadge from '../components/StatusBadge';
@@ -292,15 +293,23 @@ export default function RoomPage() {
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             {room.status === 'running' && isCashMode && (
-              <Card className="p-4">
-                <PokerTable
-                  handState={handState}
-                  myPlayerId={myPlayerId}
-                  isHost={isHost}
-                  onAction={handleAction}
-                  onStartHand={handleStartHand}
-                />
-              </Card>
+              <>
+                <Card className="p-3 sm:p-4">
+                  <PokerTable
+                    handState={handState}
+                    myPlayerId={myPlayerId}
+                    isHost={isHost}
+                    onAction={handleAction}
+                    onStartHand={handleStartHand}
+                  />
+                </Card>
+                {handState?.actions?.length > 0 && (
+                  <Card className="p-4">
+                    <h3 className="text-sm font-bold text-slate-700 mb-2">动作历史</h3>
+                    <HandHistory actions={handState.actions} />
+                  </Card>
+                )}
+              </>
             )}
             <Card className="p-6">
               <div className="flex items-center justify-between gap-3 mb-4">
