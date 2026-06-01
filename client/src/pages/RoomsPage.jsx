@@ -22,7 +22,8 @@ export default function RoomsPage() {
     chip_rate: '0.05',
     game_mode: 'tournament',
     sb_amount: '10',
-    bb_amount: '20'
+    bb_amount: '20',
+    action_timeout_seconds: '30'
   });
   const [joinCode, setJoinCode] = useState('');
   const [message, setMessage] = useState('');
@@ -51,9 +52,11 @@ export default function RoomsPage() {
         chip_rate: Number(form.chip_rate),
         game_mode: form.game_mode
       };
+
       if (form.game_mode === 'cash') {
         payload.sb_amount = Number(form.sb_amount);
         payload.bb_amount = Number(form.bb_amount);
+        payload.action_timeout_seconds = Number(form.action_timeout_seconds);
         if (
           !Number.isFinite(payload.sb_amount) ||
           !Number.isFinite(payload.bb_amount) ||
@@ -62,6 +65,13 @@ export default function RoomsPage() {
           payload.sb_amount >= payload.bb_amount
         ) {
           throw new Error('小盲和大盲必须为正数，且小盲必须小于大盲');
+        }
+        if (
+          !Number.isFinite(payload.action_timeout_seconds) ||
+          payload.action_timeout_seconds < 5 ||
+          payload.action_timeout_seconds > 300
+        ) {
+          throw new Error('行动超时时间必须在 5 到 300 秒之间');
         }
       }
 
@@ -79,7 +89,7 @@ export default function RoomsPage() {
   };
 
   const handleDeleteRoom = async (roomId) => {
-    if (!window.confirm('Are you sure you want to delete this room?')) return;
+    if (!window.confirm('确定要解散这个房间吗？房间会从大厅隐藏。')) return;
     setMessage('');
     try {
       await deleteRoom(roomId);
@@ -95,7 +105,9 @@ export default function RoomsPage() {
         <div className="text-center">
           <p className="text-sm font-semibold text-blue-600 mb-2">LAN Poker Rooms</p>
           <h1 className="text-3xl font-extrabold text-slate-800">局域网房间大厅</h1>
-          <p className="text-slate-500 mt-2">原单局入口仍在 <Link className="text-blue-600 underline" to="/">玩家页</Link> 和 <Link className="text-blue-600 underline" to="/admin">管理页</Link>。</p>
+          <p className="text-slate-500 mt-2">
+            原单局入口仍在 <Link className="text-blue-600 underline" to="/">玩家页</Link> 和 <Link className="text-blue-600 underline" to="/admin">管理页</Link>。
+          </p>
         </div>
 
         {message && <Card className="p-4 text-sm text-red-600">{message}</Card>}
@@ -163,6 +175,18 @@ export default function RoomsPage() {
                     onChange={e => setForm({ ...form, bb_amount: e.target.value })}
                     required
                   />
+                  <div className="col-span-2">
+                    <Input
+                      label="行动超时（秒）"
+                      type="number"
+                      min="5"
+                      max="300"
+                      step="1"
+                      value={form.action_timeout_seconds}
+                      onChange={e => setForm({ ...form, action_timeout_seconds: e.target.value })}
+                      required
+                    />
+                  </div>
                 </div>
               )}
               <Button type="submit" variant="primary" size="lg">创建并进入</Button>
@@ -208,7 +232,10 @@ export default function RoomsPage() {
                         <h3 className="font-bold text-slate-800">{room.name}</h3>
                         <StatusBadge status={room.status} />
                       </div>
-                      <div className="text-sm text-slate-500 mt-1">房间码 {room.id} · 1 筹码 = {room.chip_rate}</div>
+                      <div className="text-sm text-slate-500 mt-1">
+                        房间码 {room.id} · 1 筹码 = {room.chip_rate}
+                        {room.game_mode === 'cash' && ` · 盲注 ${room.sb_amount}/${room.bb_amount} · ${room.action_timeout_seconds || 30}秒`}
+                      </div>
                       {networkInfo?.url && (
                         <div className="text-xs text-slate-400 mt-1 break-all">{roomUrl(networkInfo.url, room.id)}</div>
                       )}

@@ -6,7 +6,7 @@ const { validateAction, isRoundComplete, getNextSeat, calculatePots, distributeP
 const ROUNDS = ['preflop', 'flop', 'turn', 'river'];
 
 function startHand(roomId, options, callback) {
-  const { sb = 10, bb = 20, dealerSeat } = options || {};
+  const { sb = 10, bb = 20, dealerSeat, actionTimeoutSeconds = 30 } = options || {};
 
   db.get('SELECT * FROM rooms WHERE id=? AND deleted_at IS NULL', [roomId], (err, room) => {
     if (err) return callback(err);
@@ -52,9 +52,9 @@ function startHand(roomId, options, callback) {
           db.run(
             `INSERT INTO hands (room_id, status, dealer_seat, small_blind_seat, big_blind_seat,
               small_blind_amount, big_blind_amount, community_cards, deck_snapshot,
-              current_round, current_seat, current_min_raise, total_pot, started_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [roomId, 'preflop', nextDealer, sbSeat, bbSeat, sb, bb, '[]', JSON.stringify(deckCards), 'preflop', actionSeat, bb, 0, now],
+              current_round, current_seat, current_min_raise, total_pot, action_timeout_seconds, action_started_at, started_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [roomId, 'preflop', nextDealer, sbSeat, bbSeat, sb, bb, '[]', JSON.stringify(deckCards), 'preflop', actionSeat, bb, 0, actionTimeoutSeconds, now, now],
             function(handErr) {
               if (handErr) {
                 db.run('ROLLBACK');
@@ -359,8 +359,8 @@ function processAction(handId, playerId, action, amount, callback) {
               const nextSeat = activeSeats[0]; // First to act in post-flop is first active seat after dealer
 
               db.run(
-                'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=?, current_bet=0, current_min_raise=?, total_pot=? WHERE id=?',
-                [nextRound, nextRound, JSON.stringify(allCommunity), JSON.stringify(deckCards), nextSeat, hand.big_blind_amount, hand.total_pot + actualAmount, handId],
+              'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=?, current_bet=0, current_min_raise=?, total_pot=?, action_started_at=? WHERE id=?',
+                [nextRound, nextRound, JSON.stringify(allCommunity), JSON.stringify(deckCards), nextSeat, hand.big_blind_amount, hand.total_pot + actualAmount, now, handId],
                 (advErr) => {
                   if (advErr) { db.run('ROLLBACK'); return callback(advErr); }
                   db.run('UPDATE hand_players SET current_bet=0 WHERE hand_id=?', [handId], (resetErr) => {
@@ -390,8 +390,8 @@ function processAction(handId, playerId, action, amount, callback) {
             const newMinRaise = Math.max(hand.current_min_raise, actualAmount > 0 ? actualAmount : hand.current_min_raise);
 
             db.run(
-              'UPDATE hands SET current_seat=?, current_bet=?, current_min_raise=?, total_pot=total_pot+? WHERE id=?',
-              [nextSeat, newCurrentBet, newMinRaise, actualAmount, handId],
+              'UPDATE hands SET current_seat=?, current_bet=?, current_min_raise=?, total_pot=total_pot+?, action_started_at=? WHERE id=?',
+              [nextSeat, newCurrentBet, newMinRaise, actualAmount, now, handId],
               (nextErr) => {
                 if (nextErr) { db.run('ROLLBACK'); return callback(nextErr); }
                 db.run('COMMIT');
@@ -410,6 +410,34 @@ function calculateLastRaise(actions, round) {
   if (roundActions.length === 0) return 0;
   // Simple: last raise amount is the largest amount in this round
   return Math.max(...roundActions.map(a => a.amount));
+}
+
+function processTimeoutAction(handId, callback) {
+  getHandState(handId, (err, state) => {
+    if (err) return callback(err);
+    const { hand, players } = state;
+    if (!hand || ['completed', 'showdown'].includes(hand.status)) {
+      return callback(null, { skipped: true });
+    }
+
+    const player = players.find(p => p.seat === hand.current_seat && !p.is_folded && !p.is_all_in);
+    if (!player) return callback(null, { skipped: true });
+
+    const currentBet = Math.max(...players.map(p => p.current_bet));
+    const toCall = currentBet - player.current_bet;
+    const action = toCall > 0 ? 'fold' : 'check';
+
+    processAction(handId, player.player_id, action, 0, (actionErr, result) => {
+      if (actionErr) return callback(actionErr);
+      callback(null, {
+        ...result,
+        timedOut: true,
+        playerId: player.player_id,
+        seat: player.seat,
+        action
+      });
+    });
+  });
 }
 
 function settleHand(handId, handPlayers, communityCards, callback) {
@@ -540,5 +568,6 @@ module.exports = {
   getHandState,
   getCurrentHandForRoom,
   getHandHistory,
-  settleHand
+  settleHand,
+  processTimeoutAction
 };

@@ -85,6 +85,7 @@ db.serialize(() => {
     addColumnIfMissing(cols, 'game_mode', "ALTER TABLE rooms ADD COLUMN game_mode TEXT DEFAULT 'tournament'");
     addColumnIfMissing(cols, 'sb_amount', 'ALTER TABLE rooms ADD COLUMN sb_amount INTEGER DEFAULT 10');
     addColumnIfMissing(cols, 'bb_amount', 'ALTER TABLE rooms ADD COLUMN bb_amount INTEGER DEFAULT 20');
+    addColumnIfMissing(cols, 'action_timeout_seconds', 'ALTER TABLE rooms ADD COLUMN action_timeout_seconds INTEGER DEFAULT 30');
     addColumnIfMissing(cols, 'current_hand_id', 'ALTER TABLE rooms ADD COLUMN current_hand_id INTEGER DEFAULT NULL');
   });
 
@@ -106,6 +107,8 @@ db.serialize(() => {
       current_bet INTEGER NOT NULL DEFAULT 0,
       current_min_raise INTEGER,
       total_pot INTEGER NOT NULL DEFAULT 0,
+      action_timeout_seconds INTEGER NOT NULL DEFAULT 30,
+      action_started_at INTEGER,
       started_at INTEGER,
       ended_at INTEGER,
       created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
@@ -165,6 +168,8 @@ db.serialize(() => {
     if (cols && cols.length > 0) {
       addColumnIfMissing(cols, 'current_bet', 'ALTER TABLE hands ADD COLUMN current_bet INTEGER DEFAULT 0');
       addColumnIfMissing(cols, 'deck_snapshot', 'ALTER TABLE hands ADD COLUMN deck_snapshot TEXT DEFAULT \'[]\'');
+      addColumnIfMissing(cols, 'action_timeout_seconds', 'ALTER TABLE hands ADD COLUMN action_timeout_seconds INTEGER DEFAULT 30');
+      addColumnIfMissing(cols, 'action_started_at', 'ALTER TABLE hands ADD COLUMN action_started_at INTEGER');
     }
   });
 

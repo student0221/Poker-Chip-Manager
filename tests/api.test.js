@@ -531,3 +531,69 @@ test('cash game fold awards full pot including folded player contribution', asyn
   const totalPot = pots.body.pots.reduce((sum, pot) => sum + pot.amount, 0);
   expect(totalPot).toBe(30);
 });
+
+test('cash game uses room blinds, timeout setting, and automatic timeout actions', async () => {
+  const { processTimeoutAction } = require('../server/poker/game-controller');
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({
+      name: 'Timeout Table',
+      chip_rate: 1,
+      device_id: 'timeout-host',
+      game_mode: 'cash',
+      sb_amount: 15,
+      bb_amount: 30,
+      action_timeout_seconds: 12
+    });
+  expect(roomRes.status).toBe(201);
+  const roomId = roomRes.body.id;
+
+  await request(app)
+    .post(`/api/rooms/${roomId}/start`)
+    .send({ device_id: 'timeout-host' });
+
+  const aliceRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Alice', nickname: 'Timeout Alice', initial_chips: 1000, device_id: 'timeout-alice' });
+  const bobRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Bob', nickname: 'Timeout Bob', initial_chips: 1000, device_id: 'timeout-bob' });
+  expect(aliceRes.status).toBe(201);
+  expect(bobRes.status).toBe(201);
+
+  const handRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands`)
+    .send({ device_id: 'timeout-host' });
+  expect(handRes.status).toBe(201);
+
+  let state = await request(app)
+    .get(`/api/rooms/${roomId}/hands/current`)
+    .set('x-device-id', 'timeout-host');
+  expect(state.body.hand).toMatchObject({
+    small_blind_amount: 15,
+    big_blind_amount: 30,
+    action_timeout_seconds: 12
+  });
+  expect(state.body.hand.total_pot).toBe(45);
+
+  let actionRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'call', amount: 15, device_id: 'timeout-alice' });
+  expect(actionRes.status).toBe(200);
+  expect(actionRes.body.advanced).toBe(true);
+
+  const timeoutCheck = await new Promise((resolve, reject) => {
+    processTimeoutAction(handRes.body.handId, (err, result) => err ? reject(err) : resolve(result));
+  });
+  expect(timeoutCheck).toMatchObject({ timedOut: true, playerId: aliceRes.body.id, action: 'check' });
+
+  actionRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'raise', amount: 30, device_id: 'timeout-bob' });
+  expect(actionRes.status).toBe(200);
+
+  const timeoutFold = await new Promise((resolve, reject) => {
+    processTimeoutAction(handRes.body.handId, (err, result) => err ? reject(err) : resolve(result));
+  });
+  expect(timeoutFold).toMatchObject({ timedOut: true, playerId: aliceRes.body.id, action: 'fold', ended: true });
+});

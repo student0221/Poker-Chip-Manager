@@ -136,6 +136,7 @@ export default function RoomPage() {
     socket.on('hand:started', refreshSilently);
     socket.on('hand:updated', refreshSilently);
     socket.on('hand:action', refreshSilently);
+    socket.on('hand:timeout', refreshSilently);
     socket.on('hand:turn', refreshSilently);
     socket.on('hand:ended', refreshSilently);
     socket.on('room:deleted', () => {
@@ -207,7 +208,11 @@ export default function RoomPage() {
 
   const handleStartHand = () => {
     runAction(async () => {
-      await startHand(roomId);
+      await startHand(roomId, {
+        sb: room.sb_amount,
+        bb: room.bb_amount,
+        action_timeout_seconds: room.action_timeout_seconds
+      });
       setMessage('新一手已开始');
     });
   };
@@ -295,7 +300,7 @@ export default function RoomPage() {
                 </div>
                 {room.game_mode === 'cash' && (
                   <div className="mt-2 text-xs text-slate-500">
-                    小盲 {room.sb_amount} / 大盲 {room.bb_amount}
+                    小盲 {room.sb_amount} / 大盲 {room.bb_amount} / 行动 {room.action_timeout_seconds || 30}秒
                   </div>
                 )}
               </div>
@@ -307,7 +312,7 @@ export default function RoomPage() {
           <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             {room.status === 'running' && isCashMode && (
               <>
-                <Card className="p-1 sm:p-4 overflow-hidden">
+                <Card className="p-1 sm:p-4 overflow-visible">
                   <PokerTable
                     handState={handState}
                     myPlayerId={myPlayerId}

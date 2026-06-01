@@ -3,6 +3,7 @@ const router = express.Router({ mergeParams: true });
 const db = require('../db');
 const { emitRoomEvent } = require('../socket');
 const { startHand, processAction, getHandState, getCurrentHandForRoom, getHandHistory } = require('../poker/game-controller');
+const { clearHandTimeout, scheduleHandTimeout } = require('../poker/timeout-manager');
 
 function getDeviceId(req) {
   return req.body?.device_id || req.get('x-device-id') || null;
@@ -35,11 +36,19 @@ router.post('/', (req, res) => {
         return res.status(409).json({ error: 'Room must be running to start a hand', currentStatus: room.status });
       }
 
-      const { sb, bb, dealer_seat } = req.body || {};
-      startHand(room.id, { sb, bb, dealerSeat: dealer_seat }, (err, result) => {
+      const { sb, bb, dealer_seat, action_timeout_seconds } = req.body || {};
+      startHand(room.id, {
+        sb: sb ?? room.sb_amount,
+        bb: bb ?? room.bb_amount,
+        dealerSeat: dealer_seat,
+        actionTimeoutSeconds: action_timeout_seconds ?? room.action_timeout_seconds
+      }, (err, result) => {
         if (err) return res.status(400).json({ error: err.message });
-        emitRoomEvent(room.id, 'hand:started', { handId: result.handId, status: result.status, currentSeat: result.currentSeat });
-        res.status(201).json(result);
+        getHandState(result.handId, (stateErr, state) => {
+          if (!stateErr) scheduleHandTimeout(room.id, state);
+          emitRoomEvent(room.id, 'hand:started', { handId: result.handId, status: result.status, currentSeat: result.currentSeat });
+          res.status(201).json(result);
+        });
       });
     });
   });
@@ -158,6 +167,7 @@ router.post('/:handId/actions', (req, res) => {
           });
 
           if (result.ended || result.showdown) {
+            clearHandTimeout(state.hand.id);
             emitRoomEvent(room.id, 'hand:ended', {
               handId: state.hand.id,
               result: result.result || result
@@ -175,6 +185,10 @@ router.post('/:handId/actions', (req, res) => {
               currentBet: result.currentBet
             });
           }
+
+          getHandState(state.hand.id, (nextErr, nextState) => {
+            if (!nextErr) scheduleHandTimeout(room.id, nextState);
+          });
 
           res.json(result);
         });
@@ -208,6 +222,7 @@ router.post('/:handId/advance', (req, res) => {
             settleHand(hand.id, state.players, JSON.parse(hand.community_cards || '[]'), (settleErr, result) => {
               if (settleErr) return res.status(500).json({ error: settleErr.message });
               db.run('UPDATE rooms SET current_hand_id=NULL WHERE id=?', [room.id]);
+              clearHandTimeout(hand.id);
               emitRoomEvent(room.id, 'hand:ended', { handId: hand.id, result });
               res.json({ ended: true, result });
             });
@@ -225,6 +240,7 @@ router.post('/:handId/advance', (req, res) => {
             settleHand(hand.id, state.players, JSON.parse(hand.community_cards || '[]'), (settleErr, result) => {
               if (settleErr) return res.status(500).json({ error: settleErr.message });
               db.run('UPDATE rooms SET current_hand_id=NULL WHERE id=?', [room.id]);
+              clearHandTimeout(hand.id);
               emitRoomEvent(room.id, 'hand:ended', { handId: hand.id, result });
               res.json({ showdown: true, result });
             });
@@ -245,13 +261,14 @@ router.post('/:handId/advance', (req, res) => {
         db.serialize(() => {
           db.run('BEGIN TRANSACTION');
           db.run(
-            'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=?, current_bet=0 WHERE id=?',
-            [nextRound, nextRound, JSON.stringify(allCommunity), JSON.stringify(deckCards), nextSeat, hand.id],
+            'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=?, current_bet=0, action_started_at=? WHERE id=?',
+            [nextRound, nextRound, JSON.stringify(allCommunity), JSON.stringify(deckCards), nextSeat, Date.now(), hand.id],
             (advErr) => {
               if (advErr) { db.run('ROLLBACK'); return res.status(500).json({ error: advErr.message }); }
               db.run('UPDATE hand_players SET current_bet=0 WHERE hand_id=?', [hand.id], (resetErr) => {
                 if (resetErr) { db.run('ROLLBACK'); return res.status(500).json({ error: resetErr.message }); }
                 db.run('COMMIT');
+                scheduleHandTimeout(room.id, { hand: { ...hand, id: hand.id, status: nextRound, current_seat: nextSeat, action_timeout_seconds: hand.action_timeout_seconds, action_started_at: Date.now() } });
                 emitRoomEvent(room.id, 'hand:updated', {
                   handId: hand.id,
                   newRound,

@@ -46,10 +46,10 @@ function createRoomWithRetry(input, attempts, res) {
   const roomId = generateRoomId();
   db.run(
     `
-      INSERT INTO rooms (id, name, host_device_id, chip_rate, status, game_mode, sb_amount, bb_amount)
-      VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
+      INSERT INTO rooms (id, name, host_device_id, chip_rate, status, game_mode, sb_amount, bb_amount, action_timeout_seconds)
+      VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
     `,
-    [roomId, input.name, input.hostDeviceId, input.chipRate, input.gameMode, input.sb, input.bb],
+    [roomId, input.name, input.hostDeviceId, input.chipRate, input.gameMode, input.sb, input.bb, input.actionTimeoutSeconds],
     function(err) {
       if (err) {
         if (err.message && err.message.includes('UNIQUE') && attempts > 0) {
@@ -96,7 +96,7 @@ function enrichPlayer(player, chipRate) {
 }
 
 router.post('/rooms', (req, res) => {
-  const { name, chip_rate, device_id, game_mode, sb_amount, bb_amount } = req.body;
+  const { name, chip_rate, device_id, game_mode, sb_amount, bb_amount, action_timeout_seconds } = req.body;
   const hostDeviceId = device_id || req.get('x-device-id');
   if (!hostDeviceId) {
     return res.status(400).json({ error: 'device_id is required to create a room' });
@@ -110,6 +110,10 @@ router.post('/rooms', (req, res) => {
   const mode = game_mode === 'cash' ? 'cash' : 'tournament';
   const sb = sb_amount ? Number(sb_amount) : 10;
   const bb = bb_amount ? Number(bb_amount) : 20;
+  const actionTimeoutSeconds = action_timeout_seconds ? Number(action_timeout_seconds) : 30;
+  if (!Number.isFinite(actionTimeoutSeconds) || actionTimeoutSeconds < 5 || actionTimeoutSeconds > 300) {
+    return res.status(400).json({ error: 'Action timeout must be between 5 and 300 seconds' });
+  }
 
   createRoomWithRetry(
     {
@@ -118,7 +122,8 @@ router.post('/rooms', (req, res) => {
       chipRate,
       gameMode: mode,
       sb,
-      bb
+      bb,
+      actionTimeoutSeconds
     },
     5,
     res

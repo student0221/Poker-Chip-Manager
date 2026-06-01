@@ -1,32 +1,32 @@
 import { useEffect, useState } from 'react';
 
-const TURN_TIME_SECONDS = 30;
-
-export default function ActionTimer({ isActive }) {
-  const [timeLeft, setTimeLeft] = useState(TURN_TIME_SECONDS);
+export default function ActionTimer({ isActive, timeoutSeconds = 30, startedAt }) {
+  const duration = Math.max(1, Number(timeoutSeconds) || 30);
+  const [timeLeft, setTimeLeft] = useState(duration);
 
   useEffect(() => {
+    const getRemaining = () => {
+      if (!startedAt) return duration;
+      return Math.max(0, duration - (Date.now() - Number(startedAt)) / 1000);
+    };
+
     if (!isActive) {
-      setTimeLeft(TURN_TIME_SECONDS);
+      setTimeLeft(duration);
       return;
     }
-    setTimeLeft(TURN_TIME_SECONDS);
+    setTimeLeft(getRemaining());
     const interval = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 0.1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 0.1;
-      });
+      const remaining = getRemaining();
+      setTimeLeft(remaining);
+      if (remaining <= 0.1) clearInterval(interval);
     }, 100);
     return () => clearInterval(interval);
-  }, [isActive]);
+  }, [duration, isActive, startedAt]);
 
   if (!isActive) return null;
 
-  const percentage = (timeLeft / TURN_TIME_SECONDS) * 100;
-  const isUrgent = timeLeft <= 10;
+  const percentage = (timeLeft / duration) * 100;
+  const isUrgent = timeLeft <= Math.min(10, duration / 3);
 
   return (
     <div className="w-full mt-1">
