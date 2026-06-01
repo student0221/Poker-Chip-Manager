@@ -101,6 +101,7 @@ export default function AdminPage() {
     }
     const formatted = parseFloat(num.toFixed(2));
     setRateInput(formatted.toFixed(2));
+    setRateCommitted(formatted.toFixed(2));
     const res = await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

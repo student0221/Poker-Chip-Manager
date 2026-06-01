@@ -57,7 +57,7 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       room_id TEXT DEFAULT 'default' REFERENCES rooms(id),
       name TEXT NOT NULL,
-      nickname TEXT NOT NULL,
+      nickname TEXT NOT NULL UNIQUE,
       initial_chips INTEGER NOT NULL DEFAULT 0,
       final_chips INTEGER DEFAULT NULL,
       net_profit REAL DEFAULT NULL,
