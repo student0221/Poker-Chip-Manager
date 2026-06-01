@@ -6,6 +6,7 @@ import {
   adminAddRoomPlayer,
   deleteRoom,
   endRoom,
+  getCurrentHand,
   getDeviceId,
   getNetworkInfo,
   getRoom,
@@ -13,8 +14,11 @@ import {
   getRoomRankings,
   getRoomSettleProgress,
   joinRoom,
+  postAction,
   resetRoom,
+  setRoomMode,
   settleRoom,
+  startHand,
   startRoom,
   submitRoomFinal
 } from '../api';
@@ -23,6 +27,7 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import InviteQRCode from '../components/InviteQRCode';
 import Input from '../components/Input';
+import PokerTable from '../components/PokerTable';
 import ProfitDisplay from '../components/ProfitDisplay';
 import StatusBadge from '../components/StatusBadge';
 import { sanitizeText } from '../utils/safeRender';
@@ -45,8 +50,11 @@ export default function RoomPage() {
   const [rankings, setRankings] = useState(null);
   const [progress, setProgress] = useState(null);
   const [message, setMessage] = useState('');
+  const [myPlayerId, setMyPlayerId] = useState(null);
+  const [handState, setHandState] = useState(null);
 
   const isHost = room?.host_device_id === getDeviceId();
+  const isCashMode = room?.game_mode === 'cash';
   const shareUrl = useMemo(() => inviteUrl(networkInfo?.url, roomId), [networkInfo?.url, roomId]);
 
   const refresh = async () => {
@@ -58,6 +66,12 @@ export default function RoomPage() {
     setRoom(nextRoom);
     setPlayers(nextPlayers);
     setNetworkInfo(info);
+
+    // Find my player_id
+    const deviceId = getDeviceId();
+    const me = nextPlayers.find(p => p.device_id === deviceId);
+    setMyPlayerId(me?.id || null);
+
     if (nextRoom.status === 'settling') {
       setProgress(await getRoomSettleProgress(roomId));
     } else {
@@ -68,6 +82,18 @@ export default function RoomPage() {
       setRankings(data.rankings);
     } else {
       setRankings(null);
+    }
+
+    // Fetch current hand for cash mode
+    if (nextRoom.game_mode === 'cash' && nextRoom.current_hand_id) {
+      try {
+        const currentHand = await getCurrentHand(roomId);
+        setHandState(currentHand?.hand ? currentHand : null);
+      } catch {
+        setHandState(null);
+      }
+    } else {
+      setHandState(null);
     }
   };
 
@@ -93,6 +119,11 @@ export default function RoomPage() {
     socket.on('chips:added', refreshSilently);
     socket.on('settle:progress', refreshSilently);
     socket.on('game:settled', refreshSilently);
+    socket.on('hand:started', refreshSilently);
+    socket.on('hand:updated', refreshSilently);
+    socket.on('hand:action', refreshSilently);
+    socket.on('hand:turn', refreshSilently);
+    socket.on('hand:ended', refreshSilently);
     socket.on('room:deleted', () => {
       setMessage('房间已解散');
       navigate('/rooms');
@@ -160,6 +191,31 @@ export default function RoomPage() {
     });
   };
 
+  const handleStartHand = () => {
+    runAction(async () => {
+      await startHand(roomId);
+      setMessage('新一手已开始');
+    });
+  };
+
+  const handleAction = async (action, amount) => {
+    setMessage('');
+    try {
+      if (!handState?.hand?.id) throw new Error('No active hand');
+      await postAction(roomId, handState.hand.id, action, amount, myPlayerId);
+      await refresh();
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
+  const handleSetMode = (mode) => {
+    runAction(async () => {
+      await setRoomMode(roomId, mode);
+      setMessage(`已切换为${mode === 'cash' ? '对战' : '锦标赛'}模式`);
+    });
+  };
+
   if (!room) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50 flex items-center justify-center">
@@ -204,11 +260,48 @@ export default function RoomPage() {
               <Button variant="ghost" onClick={() => refresh().catch(err => setMessage(err.message))}>刷新</Button>
               <Button variant="danger" onClick={handleDeleteRoom}>解散房间</Button>
             </div>
+            {room.status === 'pending' && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <div className="text-sm font-semibold text-slate-700 mb-2">游戏模式</div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={room.game_mode === 'tournament' ? 'primary' : 'ghost'}
+                    size="sm"
+                    onClick={() => handleSetMode('tournament')}
+                  >
+                    锦标赛（原版）
+                  </Button>
+                  <Button
+                    variant={room.game_mode === 'cash' ? 'primary' : 'ghost'}
+                    size="sm"
+                    onClick={() => handleSetMode('cash')}
+                  >
+                    对战模式（德州）
+                  </Button>
+                </div>
+                {room.game_mode === 'cash' && (
+                  <div className="mt-2 text-xs text-slate-500">
+                    小盲 {room.sb_amount} / 大盲 {room.bb_amount}
+                  </div>
+                )}
+              </div>
+            )}
           </Card>
         )}
 
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            {room.status === 'running' && isCashMode && (
+              <Card className="p-4">
+                <PokerTable
+                  handState={handState}
+                  myPlayerId={myPlayerId}
+                  isHost={isHost}
+                  onAction={handleAction}
+                  onStartHand={handleStartHand}
+                />
+              </Card>
+            )}
             <Card className="p-6">
               <div className="flex items-center justify-between gap-3 mb-4">
                 <h2 className="text-lg font-bold text-slate-800">玩家列表 ({players.length})</h2>

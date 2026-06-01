@@ -80,6 +80,94 @@ db.serialize(() => {
     migrateNicknameUniqueness();
   });
 
+  db.all('PRAGMA table_info(rooms)', (err, cols) => {
+    if (err) return;
+    addColumnIfMissing(cols, 'game_mode', "ALTER TABLE rooms ADD COLUMN game_mode TEXT DEFAULT 'tournament'");
+    addColumnIfMissing(cols, 'sb_amount', 'ALTER TABLE rooms ADD COLUMN sb_amount INTEGER DEFAULT 10');
+    addColumnIfMissing(cols, 'bb_amount', 'ALTER TABLE rooms ADD COLUMN bb_amount INTEGER DEFAULT 20');
+    addColumnIfMissing(cols, 'current_hand_id', 'ALTER TABLE rooms ADD COLUMN current_hand_id INTEGER DEFAULT NULL');
+  });
+
+  // Poker hand tables
+  db.run(`
+    CREATE TABLE IF NOT EXISTS hands (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id TEXT NOT NULL REFERENCES rooms(id),
+      status TEXT NOT NULL DEFAULT 'pending',
+      dealer_seat INTEGER NOT NULL DEFAULT 0,
+      small_blind_seat INTEGER,
+      big_blind_seat INTEGER,
+      small_blind_amount INTEGER NOT NULL DEFAULT 10,
+      big_blind_amount INTEGER NOT NULL DEFAULT 20,
+      community_cards TEXT DEFAULT '[]',
+      deck_snapshot TEXT DEFAULT '[]',
+      current_round TEXT,
+      current_seat INTEGER,
+      current_bet INTEGER NOT NULL DEFAULT 0,
+      current_min_raise INTEGER,
+      total_pot INTEGER NOT NULL DEFAULT 0,
+      started_at INTEGER,
+      ended_at INTEGER,
+      created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS hand_players (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      hand_id INTEGER NOT NULL REFERENCES hands(id),
+      player_id INTEGER NOT NULL REFERENCES players(id),
+      seat INTEGER NOT NULL,
+      hole_cards TEXT DEFAULT '[]',
+      current_chips INTEGER NOT NULL,
+      current_bet INTEGER NOT NULL DEFAULT 0,
+      total_bet INTEGER NOT NULL DEFAULT 0,
+      is_folded INTEGER NOT NULL DEFAULT 0,
+      is_all_in INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      result INTEGER DEFAULT 0,
+      hand_rank TEXT,
+      created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS hand_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      hand_id INTEGER NOT NULL REFERENCES hands(id),
+      player_id INTEGER NOT NULL REFERENCES players(id),
+      action_type TEXT NOT NULL,
+      amount INTEGER DEFAULT 0,
+      round TEXT NOT NULL,
+      seat INTEGER NOT NULL,
+      created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS pots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      hand_id INTEGER NOT NULL REFERENCES hands(id),
+      amount INTEGER NOT NULL DEFAULT 0,
+      eligible_players TEXT DEFAULT '[]',
+      is_side_pot INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+    )
+  `);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_hands_room_id ON hands(room_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_hand_players_hand_id ON hand_players(hand_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_hand_actions_hand_id ON hand_actions(hand_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_pots_hand_id ON pots(hand_id)');
+
+  db.all('PRAGMA table_info(hands)', (err, cols) => {
+    if (err) return;
+    if (cols && cols.length > 0) {
+      addColumnIfMissing(cols, 'current_bet', 'ALTER TABLE hands ADD COLUMN current_bet INTEGER DEFAULT 0');
+      addColumnIfMissing(cols, 'deck_snapshot', 'ALTER TABLE hands ADD COLUMN deck_snapshot TEXT DEFAULT \'[]\'');
+    }
+  });
+
   db.get('SELECT id FROM settings WHERE id = 1', (err, row) => {
     if (!row) {
       db.run('INSERT INTO settings (id, status, chip_rate) VALUES (1, ?, ?)', ['pending', 0.05], () => {

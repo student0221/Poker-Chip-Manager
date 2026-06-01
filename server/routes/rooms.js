@@ -46,10 +46,10 @@ function createRoomWithRetry(input, attempts, res) {
   const roomId = generateRoomId();
   db.run(
     `
-      INSERT INTO rooms (id, name, host_device_id, chip_rate, status)
-      VALUES (?, ?, ?, ?, 'pending')
+      INSERT INTO rooms (id, name, host_device_id, chip_rate, status, game_mode, sb_amount, bb_amount)
+      VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
     `,
-    [roomId, input.name, input.hostDeviceId, input.chipRate],
+    [roomId, input.name, input.hostDeviceId, input.chipRate, input.gameMode, input.sb, input.bb],
     function(err) {
       if (err) {
         if (err.message && err.message.includes('UNIQUE') && attempts > 0) {
@@ -96,7 +96,7 @@ function enrichPlayer(player, chipRate) {
 }
 
 router.post('/rooms', (req, res) => {
-  const { name, chip_rate, device_id } = req.body;
+  const { name, chip_rate, device_id, game_mode, sb_amount, bb_amount } = req.body;
   const hostDeviceId = device_id || req.get('x-device-id');
   if (!hostDeviceId) {
     return res.status(400).json({ error: 'device_id is required to create a room' });
@@ -107,11 +107,18 @@ router.post('/rooms', (req, res) => {
     return res.status(400).json({ error: 'Invalid chip_rate' });
   }
 
+  const mode = game_mode === 'cash' ? 'cash' : 'tournament';
+  const sb = sb_amount ? Number(sb_amount) : 10;
+  const bb = bb_amount ? Number(bb_amount) : 20;
+
   createRoomWithRetry(
     {
       name: name && name.trim() ? name.trim() : 'Poker Room',
       hostDeviceId,
-      chipRate
+      chipRate,
+      gameMode: mode,
+      sb,
+      bb
     },
     5,
     res
@@ -152,17 +159,46 @@ router.post('/rooms/:roomId/reset', (req, res) => {
   requireRoom(req, res, (room) => {
     requireHost(req, res, room, () => {
       db.serialize(() => {
-        db.run('DELETE FROM players WHERE room_id=?', [room.id], (playersErr) => {
-          if (playersErr) return res.status(500).json({ error: playersErr.message });
-          db.run("UPDATE rooms SET status='pending', updated_at=? WHERE id=?", [Date.now(), room.id], (roomErr) => {
-            if (roomErr) return res.status(500).json({ error: roomErr.message });
-            getRoom(room.id, (getErr, nextRoom) => {
-              if (getErr) return res.status(500).json({ error: getErr.message });
-              emitRoomEvent(room.id, 'room:state', { room: nextRoom });
-              emitRoomEvent(room.id, 'players:changed');
-              res.json(nextRoom);
+        db.run('BEGIN TRANSACTION');
+
+        // Clear hands data first to avoid FK constraints
+        db.all('SELECT id FROM hands WHERE room_id=?', [room.id], (handsErr, hands) => {
+          if (handsErr) {
+            db.run('ROLLBACK');
+            return res.status(500).json({ error: handsErr.message });
+          }
+          const handIds = (hands || []).map(h => h.id);
+          let step = 0;
+
+          const cleanup = () => {
+            step++;
+            if (step < 5) return;
+
+            db.run('DELETE FROM players WHERE room_id=?', [room.id], (playersErr) => {
+              if (playersErr) { db.run('ROLLBACK'); return res.status(500).json({ error: playersErr.message }); }
+              db.run("UPDATE rooms SET status='pending', current_hand_id=NULL, updated_at=? WHERE id=?", [Date.now(), room.id], (roomErr) => {
+                if (roomErr) { db.run('ROLLBACK'); return res.status(500).json({ error: roomErr.message }); }
+                db.run('COMMIT');
+                getRoom(room.id, (getErr, nextRoom) => {
+                  if (getErr) return res.status(500).json({ error: getErr.message });
+                  emitRoomEvent(room.id, 'room:state', { room: nextRoom });
+                  emitRoomEvent(room.id, 'players:changed');
+                  res.json(nextRoom);
+                });
+              });
             });
-          });
+          };
+
+          if (handIds.length === 0) {
+            step = 4;
+            cleanup();
+          } else {
+            const placeholders = handIds.map(() => '?').join(',');
+            db.run(`DELETE FROM pots WHERE hand_id IN (${placeholders})`, handIds, () => { step++; cleanup(); });
+            db.run(`DELETE FROM hand_actions WHERE hand_id IN (${placeholders})`, handIds, () => { step++; cleanup(); });
+            db.run(`DELETE FROM hand_players WHERE hand_id IN (${placeholders})`, handIds, () => { step++; cleanup(); });
+            db.run(`DELETE FROM hands WHERE room_id=?`, [room.id], () => { step++; cleanup(); });
+          }
         });
       });
     });
@@ -191,6 +227,39 @@ router.post('/rooms/:roomId/rate', (req, res) => {
           if (getErr) return res.status(500).json({ error: getErr.message });
           emitRoomEvent(room.id, 'room:state', { room: nextRoom });
           res.json({ status: nextRoom.status, chip_rate: nextRoom.chip_rate });
+        });
+      });
+    });
+  });
+});
+
+router.post('/rooms/:roomId/mode', (req, res) => {
+  requireRoom(req, res, (room) => {
+    requireHost(req, res, room, () => {
+      const { game_mode, sb_amount, bb_amount } = req.body;
+      if (!game_mode || !['tournament', 'cash'].includes(game_mode)) {
+        return res.status(400).json({ error: 'game_mode must be tournament or cash' });
+      }
+      if (room.status !== 'pending') {
+        return res.status(409).json({ error: 'Game mode can only be changed before the game starts', currentStatus: room.status });
+      }
+      const updates = [game_mode, Date.now(), room.id];
+      let sql = 'UPDATE rooms SET game_mode=?, updated_at=? WHERE id=?';
+      if (sb_amount !== undefined) {
+        sql = 'UPDATE rooms SET game_mode=?, sb_amount=?, updated_at=? WHERE id=?';
+        updates.splice(1, 0, Number(sb_amount));
+      }
+      if (bb_amount !== undefined) {
+        const idx = sql.indexOf('updated_at');
+        sql = sql.slice(0, idx) + 'bb_amount=?, ' + sql.slice(idx);
+        updates.splice(updates.length - 1, 0, Number(bb_amount));
+      }
+      db.run(sql, updates, (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        getRoom(room.id, (getErr, nextRoom) => {
+          if (getErr) return res.status(500).json({ error: getErr.message });
+          emitRoomEvent(room.id, 'room:state', { room: nextRoom });
+          res.json(nextRoom);
         });
       });
     });

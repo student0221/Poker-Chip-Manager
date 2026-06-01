@@ -19,6 +19,7 @@ app.use((req, res, next) => {
 
 app.use('/api', require('./routes/settings'));
 app.use('/api', require('./routes/rooms'));
+app.use('/api/rooms/:roomId/hands', require('./routes/hands'));
 app.use('/api', require('./routes/players'));
 app.use('/api', require('./routes/settle'));
 

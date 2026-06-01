@@ -250,3 +250,61 @@ export async function getRankings() {
   const res = await fetch(`${API_BASE}/api/rankings`);
   return res.json();
 }
+
+// Cash game hand APIs
+export async function startHand(roomId, options = {}) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...options, device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function getCurrentHand(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands/current`, {
+    headers: { 'x-device-id': getDeviceId() }
+  });
+  return parseJsonResponse(res);
+}
+
+export async function getHandHistory(roomId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands`);
+  return parseJsonResponse(res);
+}
+
+export async function getHand(roomId, handId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands/${handId}`, {
+    headers: { 'x-device-id': getDeviceId() }
+  });
+  return parseJsonResponse(res);
+}
+
+export async function postAction(roomId, handId, action, amount, playerId) {
+  const body = { action, amount: amount || 0, device_id: getDeviceId() };
+  if (playerId) body.player_id = playerId;
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands/${handId}/actions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return parseJsonResponse(res);
+}
+
+export async function advanceHand(roomId, handId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands/${handId}/advance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function setRoomMode(roomId, game_mode, sb_amount, bb_amount) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/mode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId(), game_mode, sb_amount, bb_amount })
+  });
+  return parseJsonResponse(res);
+}

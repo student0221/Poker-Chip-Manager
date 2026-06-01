@@ -34,10 +34,14 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await run('DELETE FROM pots');
+  await run('DELETE FROM hand_actions');
+  await run('DELETE FROM hand_players');
+  await run('DELETE FROM hands');
   await run('DELETE FROM players');
   await run("DELETE FROM rooms WHERE id <> 'default'");
   await run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=?", [Date.now()]);
-  await run("UPDATE rooms SET status='pending', chip_rate=0.05, updated_at=? WHERE id='default'", [Date.now()]);
+  await run("UPDATE rooms SET status='pending', chip_rate=0.05, game_mode='tournament', sb_amount=10, bb_amount=20, current_hand_id=NULL, updated_at=? WHERE id='default'", [Date.now()]);
   delete process.env.PUBLIC_URL;
   delete process.env.PUBLIC_PORT;
   delete process.env.PORT;
@@ -434,4 +438,96 @@ test('socket subscribers receive room updates after room API writes', async () =
     await new Promise(resolve => socketServer.close(resolve));
     await new Promise(resolve => httpServer.close(resolve));
   }
+});
+
+test('cash game start deals private hole cards and enforces turn order', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Cash Table', chip_rate: 1, device_id: 'cash-host', game_mode: 'cash', sb_amount: 10, bb_amount: 20 });
+  expect(roomRes.status).toBe(201);
+  const roomId = roomRes.body.id;
+
+  let response = await request(app)
+    .post(`/api/rooms/${roomId}/start`)
+    .send({ device_id: 'cash-host' });
+  expect(response.status).toBe(200);
+
+  const aliceRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Alice', nickname: 'Alice', initial_chips: 1000, device_id: 'cash-alice' });
+  const bobRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Bob', nickname: 'Bob', initial_chips: 1000, device_id: 'cash-bob' });
+  expect(aliceRes.status).toBe(201);
+  expect(bobRes.status).toBe(201);
+
+  const handRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands`)
+    .send({ device_id: 'cash-host' });
+  expect(handRes.status).toBe(201);
+  expect(handRes.body).toMatchObject({ status: 'preflop', currentSeat: 0 });
+
+  const aliceView = await request(app)
+    .get(`/api/rooms/${roomId}/hands/current`)
+    .set('x-device-id', 'cash-alice');
+  expect(aliceView.status).toBe(200);
+  expect(aliceView.body.hand).toMatchObject({ current_round: 'preflop', current_seat: 0 });
+
+  const aliceSelf = aliceView.body.players.find(p => p.player_id === aliceRes.body.id);
+  const aliceBob = aliceView.body.players.find(p => p.player_id === bobRes.body.id);
+  expect(JSON.parse(aliceSelf.hole_cards)).toHaveLength(2);
+  expect(JSON.parse(aliceBob.hole_cards)).toEqual([]);
+
+  response = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'check', device_id: 'cash-bob' });
+  expect(response.status).toBe(403);
+  expect(response.body.error).toContain('turn');
+});
+
+test('cash game fold awards full pot including folded player contribution', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Fold Pot Table', chip_rate: 1, device_id: 'fold-host', game_mode: 'cash', sb_amount: 10, bb_amount: 20 });
+  expect(roomRes.status).toBe(201);
+  const roomId = roomRes.body.id;
+
+  await request(app)
+    .post(`/api/rooms/${roomId}/start`)
+    .send({ device_id: 'fold-host' });
+
+  const aliceRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Alice', nickname: 'Alice', initial_chips: 1000, device_id: 'fold-alice' });
+  const bobRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Bob', nickname: 'Bob', initial_chips: 1000, device_id: 'fold-bob' });
+  expect(aliceRes.status).toBe(201);
+  expect(bobRes.status).toBe(201);
+
+  const handRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands`)
+    .send({ device_id: 'fold-host' });
+  expect(handRes.status).toBe(201);
+
+  const foldRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'fold', device_id: 'fold-alice' });
+  expect(foldRes.status).toBe(200);
+  expect(foldRes.body.ended).toBe(true);
+  expect(foldRes.body.result.winners).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ player_id: bobRes.body.id, amount: 30 })
+    ])
+  );
+
+  const aliceAfter = await get('SELECT initial_chips FROM players WHERE id=?', [aliceRes.body.id]);
+  const bobAfter = await get('SELECT initial_chips FROM players WHERE id=?', [bobRes.body.id]);
+  expect(aliceAfter.initial_chips).toBe(990);
+  expect(bobAfter.initial_chips).toBe(1010);
+
+  const pots = await request(app).get(`/api/rooms/${roomId}/hands/${handRes.body.handId}`);
+  expect(pots.status).toBe(200);
+  const totalPot = pots.body.pots.reduce((sum, pot) => sum + pot.amount, 0);
+  expect(totalPot).toBe(30);
 });

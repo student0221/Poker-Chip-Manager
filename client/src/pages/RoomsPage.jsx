@@ -17,7 +17,13 @@ export default function RoomsPage() {
   const [rooms, setRooms] = useState([]);
   const [discoveredRooms, setDiscoveredRooms] = useState([]);
   const [networkInfo, setNetworkInfo] = useState(null);
-  const [form, setForm] = useState({ name: '', chip_rate: '0.05' });
+  const [form, setForm] = useState({
+    name: '',
+    chip_rate: '0.05',
+    game_mode: 'tournament',
+    sb_amount: '10',
+    bb_amount: '20'
+  });
   const [joinCode, setJoinCode] = useState('');
   const [message, setMessage] = useState('');
 
@@ -40,10 +46,26 @@ export default function RoomsPage() {
     event.preventDefault();
     setMessage('');
     try {
-      const room = await createRoom({
+      const payload = {
         name: form.name || 'Poker Room',
-        chip_rate: Number(form.chip_rate)
-      });
+        chip_rate: Number(form.chip_rate),
+        game_mode: form.game_mode
+      };
+      if (form.game_mode === 'cash') {
+        payload.sb_amount = Number(form.sb_amount);
+        payload.bb_amount = Number(form.bb_amount);
+        if (
+          !Number.isFinite(payload.sb_amount) ||
+          !Number.isFinite(payload.bb_amount) ||
+          payload.sb_amount <= 0 ||
+          payload.bb_amount <= 0 ||
+          payload.sb_amount >= payload.bb_amount
+        ) {
+          throw new Error('小盲和大盲必须为正数，且小盲必须小于大盲');
+        }
+      }
+
+      const room = await createRoom(payload);
       navigate(`/room/${room.id}`);
     } catch (err) {
       setMessage(err.message);
@@ -89,6 +111,49 @@ export default function RoomsPage() {
                 onChange={e => setForm({ ...form, chip_rate: e.target.value })}
                 required
               />
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-slate-700">游戏模式</div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={form.game_mode === 'tournament' ? 'primary' : 'ghost'}
+                    onClick={() => setForm({ ...form, game_mode: 'tournament' })}
+                  >
+                    锦标赛
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={form.game_mode === 'cash' ? 'primary' : 'ghost'}
+                    onClick={() => setForm({ ...form, game_mode: 'cash' })}
+                  >
+                    对战模式
+                  </Button>
+                </div>
+              </div>
+              {form.game_mode === 'cash' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="小盲"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={form.sb_amount}
+                    onChange={e => setForm({ ...form, sb_amount: e.target.value })}
+                    required
+                  />
+                  <Input
+                    label="大盲"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={form.bb_amount}
+                    onChange={e => setForm({ ...form, bb_amount: e.target.value })}
+                    required
+                  />
+                </div>
+              )}
               <Button type="submit" variant="primary" size="lg">创建并进入</Button>
             </form>
           </Card>
