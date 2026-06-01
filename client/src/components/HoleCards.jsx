@@ -1,15 +1,21 @@
+import { motion } from 'framer-motion';
 import PokerCard from './PokerCard';
 
-export default function HoleCards({ cards = [], label }) {
+export default function HoleCards({ cards = [], label, animate = false }) {
   const cardList = Array.isArray(cards) ? cards : [];
 
   return (
-    <div className="flex flex-col items-center gap-1">
-      {label && <div className="text-xs text-slate-400">{label}</div>}
-      <div className="flex items-center gap-1.5">
-        <PokerCard card={cardList[0] || null} faceDown={!cardList[0]} size="md" />
-        <PokerCard card={cardList[1] || null} faceDown={!cardList[1]} size="md" />
-      </div>
+    <div className="flex flex-col items-center gap-0.5">
+      {label && <div className="text-[10px] text-slate-400">{label}</div>}
+      <motion.div
+        className="flex items-center gap-1"
+        initial={animate ? { scale: 0.5, opacity: 0, y: -20 } : false}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
+      >
+        <PokerCard card={cardList[0] || null} faceDown={!cardList[0]} size="sm" />
+        <PokerCard card={cardList[1] || null} faceDown={!cardList[1]} size="sm" />
+      </motion.div>
     </div>
   );
 }
