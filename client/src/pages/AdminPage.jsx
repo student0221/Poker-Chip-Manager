@@ -100,20 +100,20 @@ export default function AdminPage() {
       return;
     }
     const formatted = parseFloat(num.toFixed(2));
-    setRateInput(formatted.toFixed(2));
-    setRateCommitted(formatted.toFixed(2));
+    setRateInput(String(parseFloat(formatted.toFixed(2))));
+    setRateCommitted(String(parseFloat(formatted.toFixed(2))));
     const res = await fetch('/api/rate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chip_rate: formatted })
+      body: JSON.stringify({ chip_rate: parseFloat(formatted.toFixed(2)) })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
       setMessage(err?.error || '❌ 更新筹码比例失败');
       return;
     }
-    setRateInput(formatted.toFixed(2));
-    setRateCommitted(formatted.toFixed(2));
+    setRateInput(String(parseFloat(formatted.toFixed(2))));
+    setRateCommitted(String(parseFloat(formatted.toFixed(2))));
     setMessage('✅ 筹码比例已更新');
     refresh();
   };

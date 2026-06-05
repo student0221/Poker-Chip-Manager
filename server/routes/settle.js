@@ -127,7 +127,7 @@ router.post('/settle', (req, res) => {
       const total = players.length;
 
       const finishSettlement = () => {
-        db.run("UPDATE settings SET status='completed', updated_at=? WHERE id=1 AND status='settling'", [Date.now()], function(settingsErr) {
+    db.run("UPDATE settings SET status='completed', updated_at=? WHERE id=1 AND status='settling'", [Date.now()], function(settingsErr) {
           if (settingsErr) return res.status(500).json({ error: settingsErr.message });
           if (this.changes === 0) {
             return res.status(409).json({ error: 'Settlement has already been completed' });
