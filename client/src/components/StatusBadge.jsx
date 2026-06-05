@@ -6,9 +6,10 @@ export default function StatusBadge({ status }) {
     completed: { bg: 'bg-blue-500', text: 'text-white', label: '已结束' }
   };
   const c = configs[status] || configs.pending;
+
   return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${c.bg} ${c.text}`}>
-      <span className={`w-2 h-2 rounded-full mr-2 ${c.bg === 'bg-slate-500' ? 'bg-white/60' : 'bg-white'}`}></span>
+    <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ${c.bg} ${c.text}`}>
+      <span className={`mr-2 h-2 w-2 rounded-full ${c.bg === 'bg-slate-500' ? 'bg-white/60' : 'bg-white'}`}></span>
       {c.label}
     </span>
   );

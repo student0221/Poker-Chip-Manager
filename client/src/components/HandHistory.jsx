@@ -30,22 +30,20 @@ export default function HandHistory({ actions = [] }) {
 
   const rounds = Object.keys(grouped);
   if (rounds.length === 0) {
-    return (
-      <div className="text-xs text-slate-400 text-center py-2">暂无动作记录</div>
-    );
+    return <div className="py-3 text-center text-xs text-slate-400">暂无动作记录</div>;
   }
 
   return (
-    <div className="space-y-2 max-h-48 overflow-y-auto">
-      {rounds.map(round => (
-        <div key={round}>
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+    <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
+      {rounds.map((round) => (
+        <div key={round} className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5">
+          <div className="mb-2 text-[11px] font-bold tracking-wide text-slate-500">
             {ROUND_NAMES[round] || round}
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {grouped[round].map((action, i) => (
-              <div key={i} className="flex items-center justify-between text-xs py-0.5 px-1.5 rounded bg-slate-50">
-                <span className="font-medium text-slate-700">{action.nickname || `玩家${action.seat}`}</span>
+              <div key={i} className="flex items-center justify-between rounded-lg bg-white px-2.5 py-2 text-xs shadow-sm">
+                <span className="font-medium text-slate-700">{action.nickname || `玩家 ${action.seat}`}</span>
                 <span className="text-slate-500">
                   {ACTION_NAMES[action.action_type] || action.action_type}
                   {action.amount > 0 && ` ${action.amount}`}

@@ -690,3 +690,55 @@ test('cash game raise amount is treated as target bet amount', async () => {
   expect(aliceHand).toMatchObject({ current_bet: 40, current_chips: 960, total_bet: 40 });
   expect(alicePlayer.initial_chips).toBe(960);
 });
+
+test('cash game auto-runs board and reaches showdown when all remaining players are all-in', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Auto Runout', chip_rate: 1, device_id: 'runout-host', game_mode: 'cash', sb_amount: 10, bb_amount: 20 });
+  expect(roomRes.status).toBe(201);
+  const roomId = roomRes.body.id;
+
+  await request(app)
+    .post(`/api/rooms/${roomId}/start`)
+    .send({ device_id: 'runout-host' });
+
+  const aliceRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Alice', nickname: 'Alice', initial_chips: 25, device_id: 'runout-alice' });
+  const bobRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Bob', nickname: 'Bob', initial_chips: 25, device_id: 'runout-bob' });
+  expect(aliceRes.status).toBe(201);
+  expect(bobRes.status).toBe(201);
+
+  const handRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands`)
+    .send({ device_id: 'runout-host' });
+  expect(handRes.status).toBe(201);
+
+  let actionRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'all-in', device_id: 'runout-alice' });
+  expect(actionRes.status).toBe(200);
+  expect(actionRes.body.nextSeat).toBe(1);
+
+  actionRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'call', amount: 5, device_id: 'runout-bob' });
+  expect(actionRes.status).toBe(200);
+  expect(actionRes.body).toMatchObject({ showdown: true, autoRunout: true });
+  expect(actionRes.body.communityCards).toHaveLength(5);
+
+  const room = await get('SELECT current_hand_id FROM rooms WHERE id=?', [roomId]);
+  expect(room.current_hand_id).toBeNull();
+
+  const handState = await request(app)
+    .get(`/api/rooms/${roomId}/hands/${handRes.body.handId}`)
+    .set('x-device-id', 'runout-host');
+  expect(handState.status).toBe(200);
+  expect(JSON.parse(handState.body.hand.community_cards)).toHaveLength(5);
+  expect(handState.body.hand.status).toBe('showdown');
+
+  const totalWon = (actionRes.body.result.winners || []).reduce((sum, winner) => sum + winner.amount, 0);
+  expect(totalWon).toBe(50);
+});

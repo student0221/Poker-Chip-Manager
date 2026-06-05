@@ -5,6 +5,13 @@ const { validateAction, isRoundComplete, getNextSeat, calculatePots, distributeP
 
 const ROUNDS = ['preflop', 'flop', 'turn', 'river'];
 
+function getRunoutCards(currentRound, deckCards) {
+  if (currentRound === 'preflop') return deckCards.splice(0, 5);
+  if (currentRound === 'flop') return deckCards.splice(0, 2);
+  if (currentRound === 'turn') return deckCards.splice(0, 1);
+  return [];
+}
+
 function getFirstActiveSeatAfterDealer(hand, handPlayers) {
   const activeSeats = handPlayers
     .filter(p => !p.is_folded && !p.is_all_in)
@@ -268,6 +275,9 @@ function processAction(handId, playerId, action, amount, callback) {
     const newBet = hp.current_bet + actualAmount;
     const newChips = hp.current_chips - actualAmount;
     const newTotalBet = hp.total_bet + actualAmount;
+    if (action !== 'fold' && action !== 'check' && newChips === 0) {
+      isAllIn = true;
+    }
 
     if (action !== 'fold' && newChips < 0) {
       return callback(new Error('Insufficient chips'));
@@ -351,7 +361,27 @@ function processAction(handId, playerId, action, amount, callback) {
           // Also need to consider: did everyone have a chance to act?
           // Simplification: if roundComplete, advance. Otherwise find next seat.
 
-          if (roundComplete && notFoldedNotAllIn.length > 0) {
+          if (roundComplete && notFoldedNotAllIn.length === 0) {
+            const deckCards = JSON.parse(hand.deck_snapshot || '[]');
+            const existingCards = JSON.parse(hand.community_cards || '[]');
+            const runoutCards = getRunoutCards(hand.current_round, deckCards);
+            const allCommunity = [...existingCards, ...runoutCards];
+
+            db.run(
+              'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=?, total_pot=total_pot+?, ended_at=? WHERE id=?',
+              ['showdown', 'river', JSON.stringify(allCommunity), JSON.stringify(deckCards), null, actualAmount, now, handId],
+              (sdErr) => {
+                if (sdErr) { db.run('ROLLBACK'); return callback(sdErr); }
+                settleHand(handId, newHps, allCommunity, (settleErr, result) => {
+                  if (settleErr) { db.run('ROLLBACK'); return callback(settleErr); }
+                  db.run('UPDATE rooms SET current_hand_id=NULL WHERE id=?', [roomId], () => {
+                    db.run('COMMIT');
+                    callback(null, { action, showdown: true, autoRunout: true, communityCards: allCommunity, result });
+                  });
+                });
+              }
+            );
+          } else if (roundComplete && notFoldedNotAllIn.length > 0) {
             // Advance to next round or showdown
             const roundIdx = ROUNDS.indexOf(hand.current_round);
             if (roundIdx < ROUNDS.length - 1) {
