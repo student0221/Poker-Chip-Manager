@@ -185,12 +185,12 @@ export default function PokerTable({
   return (
     <>
       {isMobile && !isLandscapeMobile && (
-        <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800 sm:hidden">
+        <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">
           建议横屏查看牌桌，公共牌和手牌会更清楚。
         </div>
       )}
       {isMobile && (
-        <div className="mb-2 flex items-center justify-center gap-1.5 sm:hidden">
+        <div className="mb-2 flex items-center justify-center gap-1.5">
           <span className="text-[11px] font-medium text-slate-500">牌桌缩放</span>
           {zoomOptions.map((option) => (
             <button
@@ -438,7 +438,7 @@ export default function PokerTable({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 12, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            className="mt-2 px-1 sm:hidden"
+            className="mt-2 px-1"
           >
             {mobileActionPanel}
           </motion.div>
