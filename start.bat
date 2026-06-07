@@ -1,5 +1,6 @@
 @echo off
 chcp 65001 >nul
+cd /d "%~dp0"
 
 echo ==========================================
 echo   Poker Chip Manager
@@ -60,27 +61,28 @@ echo.
 
 echo [4/4] Starting server...
 echo.
+set LOCAL_HOST=127.0.0.1
 set LAN_IP=localhost
 for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$ips=Get-NetIPAddress -AddressFamily IPv4; foreach ($item in $ips) { if (-not $item.IPAddress.StartsWith('127.') -and $item.PrefixOrigin -ne 'WellKnown') { $item.IPAddress; exit } }; 'localhost'"`) do set LAN_IP=%%I
 
 echo ==========================================
-echo  Server:  http://localhost:3000
-echo  Lobby:   http://localhost:3000/#/rooms
-echo  Admin:   http://localhost:3000/#/admin
-echo  Player:  http://localhost:3000/
+echo  Server:  http://%LOCAL_HOST%:3000
+echo  Lobby:   http://%LOCAL_HOST%:3000/#/rooms
+echo  Admin:   http://%LOCAL_HOST%:3000/#/admin
+echo  Player:  http://%LOCAL_HOST%:3000/
 echo.
 echo  LAN Lobby for phones on the same WiFi:
 echo  http://%LAN_IP%:3000/#/rooms
 echo ==========================================
 echo.
 
-start "Poker Server" cmd /k "npm start"
+start "Poker Server" cmd /k "cd /d ""%~dp0"" && npm start"
 
 echo Waiting for server to start...
-timeout /t 2 /nobreak >nul
+timeout /t 4 /nobreak >nul
 
 echo Opening room lobby in browser...
-start http://localhost:3000/#/rooms
+start http://%LOCAL_HOST%:3000/#/rooms
 
 echo.
 echo Server is running in the background.
