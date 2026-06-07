@@ -160,7 +160,7 @@ test('allows adding players and chips while running but blocks chip additions af
   expect(response.status).toBe(409);
 });
 
-test('manual final update no longer requires an admin secret', async () => {
+test('manual final update requires an admin secret', async () => {
   await request(app)
     .post('/api/players/admin-add')
     .send({ name: 'Alice', nickname: 'A1', initial_chips: 1000 });
@@ -170,9 +170,14 @@ test('manual final update no longer requires an admin secret', async () => {
 
   const player = await get('SELECT id FROM players WHERE nickname=?', ['A1']);
 
-  const updateRes = await request(app)
+  const deniedRes = await request(app)
     .post(`/api/players/${player.id}/final`)
     .send({ final_chips: 1200 });
+  expect(deniedRes.status).toBe(403);
+
+  const updateRes = await request(app)
+    .post(`/api/players/${player.id}/final`)
+    .send({ final_chips: 1200, admin_secret: 'admin123' });
   expect(updateRes.status).toBe(200);
   expect(updateRes.body).toMatchObject({
     final_chips: 1200,
