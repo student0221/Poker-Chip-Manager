@@ -17,26 +17,30 @@ const SUIT_NAMES = {
 const SIZE_CLASSES = {
   xs: {
     box: 'h-8 w-5 rounded-[4px]',
-    corner: 'text-[7px]',
-    center: 'text-sm',
+    corner: 'text-[6px]',
+    center: 'text-[10px]',
+    centerBox: 'inset-x-0 top-[36%] bottom-[36%]',
     inset: 'inset-[3px]'
   },
   sm: {
     box: 'h-12 w-8 rounded-md',
-    corner: 'text-[9px]',
-    center: 'text-xl',
+    corner: 'text-[8px]',
+    center: 'text-base',
+    centerBox: 'inset-x-0 top-[34%] bottom-[34%]',
     inset: 'inset-1'
   },
   md: {
     box: 'h-16 w-11 rounded-lg',
     corner: 'text-[11px]',
-    center: 'text-2xl',
+    center: 'text-xl',
+    centerBox: 'inset-x-0 top-[32%] bottom-[32%]',
     inset: 'inset-1.5'
   },
   lg: {
     box: 'h-20 w-14 rounded-xl',
     corner: 'text-xs',
-    center: 'text-3xl',
+    center: 'text-2xl',
+    centerBox: 'inset-x-0 top-[31%] bottom-[31%]',
     inset: 'inset-2'
   }
 };
@@ -79,16 +83,16 @@ export default function PokerCard({ card, faceDown = false, size = 'md', animate
           className="absolute inset-0 select-none overflow-hidden border border-slate-300 bg-white shadow-md"
           style={{ backfaceVisibility: 'hidden', borderRadius: 'inherit' }}
         >
-          <div className={`absolute left-[10%] top-[7%] flex flex-col items-center font-black leading-none ${sizing.corner} ${colorClass}`}>
+          <div className={`absolute left-[8%] top-[6%] z-10 flex flex-col items-center font-black leading-none ${sizing.corner} ${colorClass}`}>
             <span>{rank}</span>
             <span>{symbol}</span>
           </div>
-          <div className={`absolute bottom-[7%] right-[10%] flex rotate-180 flex-col items-center font-black leading-none ${sizing.corner} ${colorClass}`}>
+          <div className={`absolute bottom-[6%] right-[8%] z-10 flex rotate-180 flex-col items-center font-black leading-none ${sizing.corner} ${colorClass}`}>
             <span>{rank}</span>
             <span>{symbol}</span>
           </div>
           <div className={`absolute ${sizing.inset} rounded-[inherit] border border-slate-100`} />
-          <div className={`absolute inset-0 flex items-center justify-center font-serif font-black leading-none ${sizing.center} ${colorClass}`}>
+          <div className={`absolute ${sizing.centerBox} flex items-center justify-center overflow-hidden font-serif font-black leading-none ${sizing.center} ${colorClass}`}>
             {symbol}
           </div>
         </div>
