@@ -20,6 +20,24 @@ function getFirstActiveSeatAfterDealer(hand, handPlayers) {
   return getNextSeat(activeSeats, hand.dealer_seat, handPlayers) ?? activeSeats[0] ?? null;
 }
 
+function rollbackAndCallback(callback, error) {
+  db.run('ROLLBACK', () => callback(error));
+}
+
+function commitAndCallback(callback, payload) {
+  db.run('COMMIT', (commitErr) => {
+    if (commitErr) return rollbackAndCallback(callback, commitErr);
+    callback(null, payload);
+  });
+}
+
+function clearRoomCurrentHand(roomId, callback) {
+  db.run('UPDATE rooms SET current_hand_id=NULL WHERE id=?', [roomId], (err) => {
+    if (err) return callback(err);
+    callback(null);
+  });
+}
+
 function startHand(roomId, options, callback) {
   const { sb = 10, bb = 20, dealerSeat, actionTimeoutSeconds = 30 } = options || {};
 
@@ -144,9 +162,8 @@ function startHand(roomId, options, callback) {
                             if (updErr) { db.run('ROLLBACK'); return callback(updErr); }
                             db.run('UPDATE rooms SET current_hand_id=? WHERE id=?',
                               [handId, roomId], (roomErr) => {
-                                if (roomErr) { db.run('ROLLBACK'); return callback(roomErr); }
-                                db.run('COMMIT');
-                                callback(null, { handId, status: 'preflop', currentSeat: nextAction });
+                                if (roomErr) return rollbackAndCallback(callback, roomErr);
+                                commitAndCallback(callback, { handId, status: 'preflop', currentSeat: nextAction });
                               });
                           });
                       });
@@ -333,10 +350,10 @@ function processAction(handId, playerId, action, amount, callback) {
             db.run('UPDATE hands SET status=?, ended_at=? WHERE id=?', ['completed', now, handId], (endErr) => {
               if (endErr) { db.run('ROLLBACK'); return callback(endErr); }
               settleHand(handId, newHps, [], (settleErr, result) => {
-                if (settleErr) { db.run('ROLLBACK'); return callback(settleErr); }
-                db.run('UPDATE rooms SET current_hand_id=NULL WHERE id=?', [roomId], () => {
-                  db.run('COMMIT');
-                  callback(null, { action: 'fold', ended: true, winner: activeHps[0]?.player_id, result });
+                if (settleErr) return rollbackAndCallback(callback, settleErr);
+                clearRoomCurrentHand(roomId, (clearErr) => {
+                  if (clearErr) return rollbackAndCallback(callback, clearErr);
+                  commitAndCallback(callback, { action: 'fold', ended: true, winner: activeHps[0]?.player_id, result });
                 });
               });
             });
@@ -371,12 +388,12 @@ function processAction(handId, playerId, action, amount, callback) {
               'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=?, total_pot=total_pot+?, ended_at=? WHERE id=?',
               ['showdown', 'river', JSON.stringify(allCommunity), JSON.stringify(deckCards), null, actualAmount, now, handId],
               (sdErr) => {
-                if (sdErr) { db.run('ROLLBACK'); return callback(sdErr); }
+                if (sdErr) return rollbackAndCallback(callback, sdErr);
                 settleHand(handId, newHps, allCommunity, (settleErr, result) => {
-                  if (settleErr) { db.run('ROLLBACK'); return callback(settleErr); }
-                  db.run('UPDATE rooms SET current_hand_id=NULL WHERE id=?', [roomId], () => {
-                    db.run('COMMIT');
-                    callback(null, { action, showdown: true, autoRunout: true, communityCards: allCommunity, result });
+                  if (settleErr) return rollbackAndCallback(callback, settleErr);
+                  clearRoomCurrentHand(roomId, (clearErr) => {
+                    if (clearErr) return rollbackAndCallback(callback, clearErr);
+                    commitAndCallback(callback, { action, showdown: true, autoRunout: true, communityCards: allCommunity, result });
                   });
                 });
               }
@@ -402,23 +419,22 @@ function processAction(handId, playerId, action, amount, callback) {
               'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=?, current_bet=0, current_min_raise=?, total_pot=?, action_started_at=? WHERE id=?',
                 [nextRound, nextRound, JSON.stringify(allCommunity), JSON.stringify(deckCards), nextSeat, hand.big_blind_amount, hand.total_pot + actualAmount, now, handId],
                 (advErr) => {
-                  if (advErr) { db.run('ROLLBACK'); return callback(advErr); }
+                  if (advErr) return rollbackAndCallback(callback, advErr);
                   db.run('UPDATE hand_players SET current_bet=0 WHERE hand_id=?', [handId], (resetErr) => {
-                    if (resetErr) { db.run('ROLLBACK'); return callback(resetErr); }
-                    db.run('COMMIT');
-                    callback(null, { action, advanced: true, newRound: nextRound, communityCards: allCommunity });
+                    if (resetErr) return rollbackAndCallback(callback, resetErr);
+                    commitAndCallback(callback, { action, advanced: true, newRound: nextRound, communityCards: allCommunity });
                   });
                 }
               );
             } else {
               // Showdown
               db.run('UPDATE hands SET status=?, ended_at=?, total_pot=total_pot+? WHERE id=?', ['showdown', now, actualAmount, handId], (sdErr) => {
-                if (sdErr) { db.run('ROLLBACK'); return callback(sdErr); }
+                if (sdErr) return rollbackAndCallback(callback, sdErr);
                 settleHand(handId, newHps, JSON.parse(hand.community_cards || '[]'), (settleErr, result) => {
-                  if (settleErr) { db.run('ROLLBACK'); return callback(settleErr); }
-                  db.run('UPDATE rooms SET current_hand_id=NULL WHERE id=?', [roomId], () => {
-                    db.run('COMMIT');
-                    callback(null, { action, showdown: true, result });
+                  if (settleErr) return rollbackAndCallback(callback, settleErr);
+                  clearRoomCurrentHand(roomId, (clearErr) => {
+                    if (clearErr) return rollbackAndCallback(callback, clearErr);
+                    commitAndCallback(callback, { action, showdown: true, result });
                   });
                 });
               });
@@ -434,9 +450,8 @@ function processAction(handId, playerId, action, amount, callback) {
               'UPDATE hands SET current_seat=?, current_bet=?, current_min_raise=?, total_pot=total_pot+?, action_started_at=? WHERE id=?',
               [nextSeat, newCurrentBet, newMinRaise, actualAmount, now, handId],
               (nextErr) => {
-                if (nextErr) { db.run('ROLLBACK'); return callback(nextErr); }
-                db.run('COMMIT');
-                callback(null, { action, nextSeat, currentBet: newCurrentBet });
+                if (nextErr) return rollbackAndCallback(callback, nextErr);
+                commitAndCallback(callback, { action, nextSeat, currentBet: newCurrentBet });
               }
             );
           }

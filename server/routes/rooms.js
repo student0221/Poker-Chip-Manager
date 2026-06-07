@@ -6,6 +6,7 @@ const { upload } = require('../multerConfig');
 const { DEFAULT_ROOM_ID } = require('../constants');
 const { getDiscoveredRooms } = require('../discovery');
 const { emitRoomEvent } = require('../socket');
+const { cleanupRoomData } = require('../room-cleanup');
 
 const ROOM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -151,8 +152,8 @@ router.delete('/rooms/:roomId', (req, res) => {
       return res.status(409).json({ error: 'Default room cannot be deleted' });
     }
     requireHost(req, res, room, () => {
-      db.run('UPDATE rooms SET deleted_at=?, updated_at=? WHERE id=?', [Date.now(), Date.now(), room.id], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
+      cleanupRoomData(room.id, { status: 'pending', deleted_at: Date.now() }, (cleanupErr) => {
+        if (cleanupErr) return res.status(500).json({ error: cleanupErr.message });
         emitRoomEvent(room.id, 'room:deleted');
         res.json({ message: 'Room deleted' });
       });
@@ -163,47 +164,13 @@ router.delete('/rooms/:roomId', (req, res) => {
 router.post('/rooms/:roomId/reset', (req, res) => {
   requireRoom(req, res, (room) => {
     requireHost(req, res, room, () => {
-      db.serialize(() => {
-        db.run('BEGIN TRANSACTION');
-
-        // Clear hands data first to avoid FK constraints
-        db.all('SELECT id FROM hands WHERE room_id=?', [room.id], (handsErr, hands) => {
-          if (handsErr) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: handsErr.message });
-          }
-          const handIds = (hands || []).map(h => h.id);
-          let step = 0;
-
-          const cleanup = () => {
-            step++;
-            if (step < 5) return;
-
-            db.run('DELETE FROM players WHERE room_id=?', [room.id], (playersErr) => {
-              if (playersErr) { db.run('ROLLBACK'); return res.status(500).json({ error: playersErr.message }); }
-              db.run("UPDATE rooms SET status='pending', current_hand_id=NULL, updated_at=? WHERE id=?", [Date.now(), room.id], (roomErr) => {
-                if (roomErr) { db.run('ROLLBACK'); return res.status(500).json({ error: roomErr.message }); }
-                db.run('COMMIT');
-                getRoom(room.id, (getErr, nextRoom) => {
-                  if (getErr) return res.status(500).json({ error: getErr.message });
-                  emitRoomEvent(room.id, 'room:state', { room: nextRoom });
-                  emitRoomEvent(room.id, 'players:changed');
-                  res.json(nextRoom);
-                });
-              });
-            });
-          };
-
-          if (handIds.length === 0) {
-            step = 4;
-            cleanup();
-          } else {
-            const placeholders = handIds.map(() => '?').join(',');
-            db.run(`DELETE FROM pots WHERE hand_id IN (${placeholders})`, handIds, () => { step++; cleanup(); });
-            db.run(`DELETE FROM hand_actions WHERE hand_id IN (${placeholders})`, handIds, () => { step++; cleanup(); });
-            db.run(`DELETE FROM hand_players WHERE hand_id IN (${placeholders})`, handIds, () => { step++; cleanup(); });
-            db.run(`DELETE FROM hands WHERE room_id=?`, [room.id], () => { step++; cleanup(); });
-          }
+      cleanupRoomData(room.id, { status: 'pending' }, (cleanupErr) => {
+        if (cleanupErr) return res.status(500).json({ error: cleanupErr.message });
+        getRoom(room.id, (getErr, nextRoom) => {
+          if (getErr) return res.status(500).json({ error: getErr.message });
+          emitRoomEvent(room.id, 'room:state', { room: nextRoom });
+          emitRoomEvent(room.id, 'players:changed');
+          res.json(nextRoom);
         });
       });
     });

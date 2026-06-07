@@ -267,14 +267,19 @@ router.post('/:handId/advance', (req, res) => {
               if (advErr) { db.run('ROLLBACK'); return res.status(500).json({ error: advErr.message }); }
               db.run('UPDATE hand_players SET current_bet=0 WHERE hand_id=?', [hand.id], (resetErr) => {
                 if (resetErr) { db.run('ROLLBACK'); return res.status(500).json({ error: resetErr.message }); }
-                db.run('COMMIT');
-                scheduleHandTimeout(room.id, { hand: { ...hand, id: hand.id, status: nextRound, current_seat: nextSeat, action_timeout_seconds: hand.action_timeout_seconds, action_started_at: Date.now() } });
-                emitRoomEvent(room.id, 'hand:updated', {
-                  handId: hand.id,
-                  newRound,
-                  communityCards: allCommunity
+                db.run('COMMIT', (commitErr) => {
+                  if (commitErr) {
+                    db.run('ROLLBACK');
+                    return res.status(500).json({ error: commitErr.message });
+                  }
+                  scheduleHandTimeout(room.id, { hand: { ...hand, id: hand.id, status: nextRound, current_seat: nextSeat, action_timeout_seconds: hand.action_timeout_seconds, action_started_at: Date.now() } });
+                  emitRoomEvent(room.id, 'hand:updated', {
+                    handId: hand.id,
+                    newRound,
+                    communityCards: allCommunity
+                  });
+                  res.json({ advanced: true, newRound, communityCards: allCommunity });
                 });
-                res.json({ advanced: true, newRound, communityCards: allCommunity });
               });
             }
           );

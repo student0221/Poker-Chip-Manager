@@ -396,6 +396,180 @@ test('room host permissions protect reset and delete actions', async () => {
   expect(response.status).toBe(404);
 });
 
+test('room reset clears completed cash-game history without breaking subsequent reads', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Reset Cash Table', chip_rate: 1, device_id: 'reset-host', game_mode: 'cash', sb_amount: 10, bb_amount: 20 });
+  expect(roomRes.status).toBe(201);
+  const roomId = roomRes.body.id;
+
+  await request(app)
+    .post(`/api/rooms/${roomId}/start`)
+    .send({ device_id: 'reset-host' });
+
+  const aliceRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Alice', nickname: 'Alice', initial_chips: 1000, device_id: 'reset-alice' });
+  const bobRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Bob', nickname: 'Bob', initial_chips: 1000, device_id: 'reset-bob' });
+  expect(aliceRes.status).toBe(201);
+  expect(bobRes.status).toBe(201);
+
+  const handRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands`)
+    .send({ device_id: 'reset-host' });
+  expect(handRes.status).toBe(201);
+
+  let actionRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'call', amount: 10, device_id: 'reset-alice' });
+  expect(actionRes.status).toBe(200);
+
+  actionRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'check', device_id: 'reset-bob' });
+  expect(actionRes.status).toBe(200);
+
+  await request(app)
+    .post(`/api/rooms/${roomId}/end`)
+    .send({ device_id: 'reset-host' });
+
+  await request(app)
+    .post(`/api/rooms/${roomId}/players/${aliceRes.body.id}/final`)
+    .send({ final_chips: 990 });
+
+  await request(app)
+    .post(`/api/rooms/${roomId}/players/${bobRes.body.id}/final`)
+    .send({ final_chips: 1010 });
+
+  const settleRes = await request(app)
+    .post(`/api/rooms/${roomId}/settle`)
+    .send({ device_id: 'reset-host' });
+  expect(settleRes.status).toBe(200);
+  expect(settleRes.body.rankings).toHaveLength(2);
+
+  const resetRes = await request(app)
+    .post(`/api/rooms/${roomId}/reset`)
+    .send({ device_id: 'reset-host' });
+  expect(resetRes.status).toBe(200);
+  expect(resetRes.body).toMatchObject({ id: roomId, status: 'pending', current_hand_id: null });
+
+  const roomAfterReset = await request(app).get(`/api/rooms/${roomId}`);
+  expect(roomAfterReset.status).toBe(200);
+  expect(roomAfterReset.body).toMatchObject({ id: roomId, status: 'pending', current_hand_id: null });
+
+  const playersAfterReset = await request(app).get(`/api/rooms/${roomId}/players`);
+  expect(playersAfterReset.status).toBe(200);
+  expect(playersAfterReset.body).toEqual([]);
+
+  const handsAfterReset = await request(app).get(`/api/rooms/${roomId}/hands`);
+  expect(handsAfterReset.status).toBe(200);
+  expect(handsAfterReset.body.hands).toEqual([]);
+});
+
+test('legacy reset clears default-room cash-game history and lets the default room start cleanly again', async () => {
+  await run("UPDATE rooms SET game_mode='cash', sb_amount=10, bb_amount=20, current_hand_id=NULL, updated_at=? WHERE id='default'", [Date.now()]);
+
+  let response = await request(app).post('/api/start');
+  expect(response.status).toBe(200);
+
+  const aliceRes = await request(app)
+    .post('/api/players/join')
+    .send({ name: 'Default Alice', nickname: 'DA', initial_chips: 1000, device_id: 'default-alice' });
+  const bobRes = await request(app)
+    .post('/api/players/join')
+    .send({ name: 'Default Bob', nickname: 'DB', initial_chips: 1000, device_id: 'default-bob' });
+  expect(aliceRes.status).toBe(201);
+  expect(bobRes.status).toBe(201);
+
+  const handRes = await request(app)
+    .post('/api/rooms/default/hands')
+    .send({ device_id: 'legacy-admin' });
+  expect(handRes.status).toBe(201);
+
+  response = await request(app)
+    .post(`/api/rooms/default/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'call', amount: 10, device_id: 'default-alice' });
+  expect(response.status).toBe(200);
+
+  response = await request(app)
+    .post(`/api/rooms/default/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'check', device_id: 'default-bob' });
+  expect(response.status).toBe(200);
+
+  response = await request(app)
+    .post('/api/reset')
+    .send({ confirm: 'RESET_ALL_PLAYERS' });
+  expect(response.status).toBe(200);
+  expect(response.body).toMatchObject({ status: 'pending', chip_rate: 0.05 });
+
+  const defaultRoom = await get("SELECT status, chip_rate, current_hand_id FROM rooms WHERE id='default'");
+  expect(defaultRoom).toMatchObject({ status: 'pending', chip_rate: 0.05, current_hand_id: null });
+
+  const legacyPlayers = await request(app).get('/api/players');
+  expect(legacyPlayers.status).toBe(200);
+  expect(legacyPlayers.body).toEqual([]);
+
+  const defaultHands = await request(app).get('/api/rooms/default/hands');
+  expect(defaultHands.status).toBe(200);
+  expect(defaultHands.body.hands).toEqual([]);
+
+  response = await request(app).post('/api/start');
+  expect(response.status).toBe(200);
+});
+
+test('deleting a room with an active hand clears related game state before hiding the room', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Delete Active Table', chip_rate: 1, device_id: 'delete-host', game_mode: 'cash', sb_amount: 10, bb_amount: 20 });
+  expect(roomRes.status).toBe(201);
+  const roomId = roomRes.body.id;
+
+  let response = await request(app)
+    .post(`/api/rooms/${roomId}/start`)
+    .send({ device_id: 'delete-host' });
+  expect(response.status).toBe(200);
+
+  const aliceRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Delete Alice', nickname: 'DeleteAlice', initial_chips: 1000, device_id: 'delete-alice' });
+  const bobRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Delete Bob', nickname: 'DeleteBob', initial_chips: 1000, device_id: 'delete-bob' });
+  expect(aliceRes.status).toBe(201);
+  expect(bobRes.status).toBe(201);
+
+  const handRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands`)
+    .send({ device_id: 'delete-host' });
+  expect(handRes.status).toBe(201);
+
+  response = await request(app)
+    .delete(`/api/rooms/${roomId}`)
+    .send({ device_id: 'delete-host' });
+  expect(response.status).toBe(200);
+
+  const deletedRoom = await get('SELECT deleted_at, current_hand_id, status FROM rooms WHERE id=?', [roomId]);
+  expect(deletedRoom.deleted_at).not.toBeNull();
+  expect(deletedRoom.current_hand_id).toBeNull();
+  expect(deletedRoom.status).toBe('pending');
+
+  const playerCount = await get('SELECT COUNT(*) AS count FROM players WHERE room_id=?', [roomId]);
+  const handCount = await get('SELECT COUNT(*) AS count FROM hands WHERE room_id=?', [roomId]);
+  expect(playerCount.count).toBe(0);
+  expect(handCount.count).toBe(0);
+
+  const handPlayerCount = await get(
+    'SELECT COUNT(*) AS count FROM hand_players WHERE hand_id IN (SELECT id FROM hands WHERE room_id=?)',
+    [roomId]
+  );
+  expect(handPlayerCount.count).toBe(0);
+
+  const roomFetch = await request(app).get(`/api/rooms/${roomId}`);
+  expect(roomFetch.status).toBe(404);
+});
+
 test('socket subscribers receive room updates after room API writes', async () => {
   const httpServer = http.createServer(app);
   const socketServer = attachSocketServer(httpServer);

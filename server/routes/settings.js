@@ -3,6 +3,7 @@ const router = express.Router();
 const os = require('os');
 const db = require('../db');
 const { DEFAULT_ROOM_ID } = require('../constants');
+const { cleanupRoomData } = require('../room-cleanup');
 
 function getSettings(callback) {
   db.get('SELECT status, chip_rate FROM settings WHERE id=1', callback);
@@ -139,14 +140,11 @@ router.post('/reset', (req, res) => {
     return res.status(400).json({ error: '缺少确认参数' });
   }
 
-  db.run('DELETE FROM players', (err) => {
-    if (err) return res.status(500).json({ error: err.message });
+  cleanupRoomData(DEFAULT_ROOM_ID, { status: 'pending', chip_rate: 0.05 }, (cleanupErr) => {
+    if (cleanupErr) return res.status(500).json({ error: cleanupErr.message });
     db.run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=? WHERE id=1", [Date.now()], (settingsErr) => {
       if (settingsErr) return res.status(500).json({ error: settingsErr.message });
-      syncDefaultRoom({ status: 'pending', chip_rate: 0.05 }, (syncErr) => {
-        if (syncErr) return res.status(500).json({ error: syncErr.message });
-        res.json({ status: 'pending', chip_rate: 0.05, message: '已重置，可以开始新比赛' });
-      });
+      res.json({ status: 'pending', chip_rate: 0.05, message: '已重置，可以开始新比赛' });
     });
   });
 });
