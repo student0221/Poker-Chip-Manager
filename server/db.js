@@ -83,8 +83,8 @@ db.serialize(() => {
   db.all('PRAGMA table_info(rooms)', (err, cols) => {
     if (err) return;
     addColumnIfMissing(cols, 'game_mode', "ALTER TABLE rooms ADD COLUMN game_mode TEXT DEFAULT 'tournament'");
-    addColumnIfMissing(cols, 'sb_amount', 'ALTER TABLE rooms ADD COLUMN sb_amount INTEGER DEFAULT 10');
-    addColumnIfMissing(cols, 'bb_amount', 'ALTER TABLE rooms ADD COLUMN bb_amount INTEGER DEFAULT 20');
+    addColumnIfMissing(cols, 'sb_amount', 'ALTER TABLE rooms ADD COLUMN sb_amount INTEGER DEFAULT 1');
+    addColumnIfMissing(cols, 'bb_amount', 'ALTER TABLE rooms ADD COLUMN bb_amount INTEGER DEFAULT 2');
     addColumnIfMissing(cols, 'action_timeout_seconds', 'ALTER TABLE rooms ADD COLUMN action_timeout_seconds INTEGER DEFAULT 30');
     addColumnIfMissing(cols, 'current_hand_id', 'ALTER TABLE rooms ADD COLUMN current_hand_id INTEGER DEFAULT NULL');
   });
@@ -98,8 +98,8 @@ db.serialize(() => {
       dealer_seat INTEGER NOT NULL DEFAULT 0,
       small_blind_seat INTEGER,
       big_blind_seat INTEGER,
-      small_blind_amount INTEGER NOT NULL DEFAULT 10,
-      big_blind_amount INTEGER NOT NULL DEFAULT 20,
+      small_blind_amount INTEGER NOT NULL DEFAULT 1,
+      big_blind_amount INTEGER NOT NULL DEFAULT 2,
       community_cards TEXT DEFAULT '[]',
       deck_snapshot TEXT DEFAULT '[]',
       current_round TEXT,

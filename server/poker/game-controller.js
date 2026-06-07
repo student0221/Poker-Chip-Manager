@@ -39,7 +39,7 @@ function clearRoomCurrentHand(roomId, callback) {
 }
 
 function startHand(roomId, options, callback) {
-  const { sb = 10, bb = 20, dealerSeat, actionTimeoutSeconds = 30 } = options || {};
+  const { sb = 1, bb = 2, dealerSeat, actionTimeoutSeconds = 30 } = options || {};
 
   db.get('SELECT * FROM rooms WHERE id=? AND deleted_at IS NULL', [roomId], (err, room) => {
     if (err) return callback(err);

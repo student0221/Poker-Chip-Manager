@@ -41,7 +41,7 @@ beforeEach(async () => {
   await run('DELETE FROM players');
   await run("DELETE FROM rooms WHERE id <> 'default'");
   await run("UPDATE settings SET status='pending', chip_rate=0.05, updated_at=?", [Date.now()]);
-  await run("UPDATE rooms SET status='pending', chip_rate=0.05, game_mode='tournament', sb_amount=10, bb_amount=20, current_hand_id=NULL, updated_at=? WHERE id='default'", [Date.now()]);
+  await run("UPDATE rooms SET status='pending', chip_rate=0.05, game_mode='tournament', sb_amount=1, bb_amount=2, current_hand_id=NULL, updated_at=? WHERE id='default'", [Date.now()]);
   delete process.env.PUBLIC_URL;
   delete process.env.PUBLIC_PORT;
   delete process.env.PORT;
@@ -293,6 +293,19 @@ test('supports room-scoped APIs without leaking players into legacy default room
   const legacyPlayers = await request(app).get('/api/players');
   expect(legacyPlayers.status).toBe(200);
   expect(legacyPlayers.body).toEqual([]);
+});
+
+test('cash rooms default blinds to 1/2 when not provided', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Default Blinds Table', chip_rate: 1, device_id: 'default-blinds-host', game_mode: 'cash' });
+
+  expect(roomRes.status).toBe(201);
+  expect(roomRes.body).toMatchObject({
+    game_mode: 'cash',
+    sb_amount: 1,
+    bb_amount: 2
+  });
 });
 
 test('room-scoped full game flow settles without affecting another room', async () => {

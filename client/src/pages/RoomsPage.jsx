@@ -21,8 +21,8 @@ export default function RoomsPage() {
     name: '',
     chip_rate: '0.05',
     game_mode: 'tournament',
-    sb_amount: '10',
-    bb_amount: '20',
+    sb_amount: '1',
+    bb_amount: '2',
     action_timeout_seconds: '30'
   });
   const [joinCode, setJoinCode] = useState('');

@@ -84,8 +84,8 @@ router.post('/rooms', (req, res) => {
   }
 
   const mode = game_mode === 'cash' ? 'cash' : 'tournament';
-  const sb = sb_amount ? Number(sb_amount) : 10;
-  const bb = bb_amount ? Number(bb_amount) : 20;
+  const sb = sb_amount ? Number(sb_amount) : 1;
+  const bb = bb_amount ? Number(bb_amount) : 2;
   const actionTimeoutSeconds = action_timeout_seconds ? Number(action_timeout_seconds) : 30;
   if (!Number.isFinite(actionTimeoutSeconds) || actionTimeoutSeconds < 5 || actionTimeoutSeconds > 300) {
     return res.status(400).json({ error: 'Action timeout must be between 5 and 300 seconds' });
