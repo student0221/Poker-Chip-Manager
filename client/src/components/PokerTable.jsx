@@ -89,6 +89,7 @@ export default function PokerTable({
   const [showResult, setShowResult] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isLandscapeMobile, setIsLandscapeMobile] = useState(false);
+  const [mobileZoom, setMobileZoom] = useState(1);
 
   const isEnded = !!hand && ['completed', 'showdown'].includes(hand.status);
 
@@ -136,6 +137,11 @@ export default function PokerTable({
       ? { height: 'min(92vh, 430px)' }
       : { height: isFullRingMobile ? 'clamp(420px, 118vw, 500px)' : 'clamp(390px, 112vw, 468px)' }
     : { minHeight: '420px' };
+  const zoomOptions = [
+    { label: '100%', value: 1 },
+    { label: '90%', value: 0.9 },
+    { label: '80%', value: 0.8 }
+  ];
 
   if (!hand) {
     return (
@@ -183,9 +189,33 @@ export default function PokerTable({
           建议横屏查看牌桌，公共牌和手牌会更清楚。
         </div>
       )}
+      {isMobile && (
+        <div className="mb-2 flex items-center justify-center gap-1.5 sm:hidden">
+          <span className="text-[11px] font-medium text-slate-500">牌桌缩放</span>
+          {zoomOptions.map((option) => (
+            <button
+              key={option.label}
+              type="button"
+              onClick={() => setMobileZoom(option.value)}
+              className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                mobileZoom === option.value
+                  ? 'border-blue-500 bg-blue-600 text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div
         className={`relative mx-auto w-full ${tableMaxWidthClass}`}
-        style={tableHeightStyle}
+        style={{
+          ...tableHeightStyle,
+          transform: isMobile ? `scale(${mobileZoom})` : undefined,
+          transformOrigin: 'top center',
+          marginBottom: isMobile ? `-${Math.round((1 - mobileZoom) * 120)}px` : undefined
+        }}
       >
         <div
           className="absolute inset-[1%] rounded-[45%] shadow-2xl sm:inset-[2%]"
