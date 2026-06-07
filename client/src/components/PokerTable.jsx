@@ -88,11 +88,18 @@ export default function PokerTable({
   const { hand, players: handPlayers, pots } = handState || {};
   const [showResult, setShowResult] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isLandscapeMobile, setIsLandscapeMobile] = useState(false);
 
   const isEnded = !!hand && ['completed', 'showdown'].includes(hand.status);
 
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 640);
+    const check = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const phoneLike = Math.min(width, height) < 640;
+      setIsMobile(phoneLike);
+      setIsLandscapeMobile(phoneLike && width > height);
+    };
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
@@ -123,6 +130,12 @@ export default function PokerTable({
   const getPlayerAtSeat = (seat) => handPlayers?.find((p) => p.seat === seat);
   const handKey = hand?.id || 'none';
   const maxCurrentBet = Math.max(...(handPlayers?.map((p) => p.current_bet) || [0]));
+  const tableMaxWidthClass = isMobile ? (isLandscapeMobile ? 'max-w-[760px]' : 'max-w-[420px]') : 'max-w-4xl';
+  const tableHeightStyle = isMobile
+    ? isLandscapeMobile
+      ? { height: 'min(92vh, 430px)' }
+      : { height: isFullRingMobile ? 'clamp(420px, 118vw, 500px)' : 'clamp(390px, 112vw, 468px)' }
+    : { minHeight: '420px' };
 
   if (!hand) {
     return (
@@ -165,9 +178,14 @@ export default function PokerTable({
 
   return (
     <>
+      {isMobile && !isLandscapeMobile && (
+        <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800 sm:hidden">
+          建议横屏查看牌桌，公共牌和手牌会更清楚。
+        </div>
+      )}
       <div
-        className={`relative mx-auto w-full ${isMobile ? 'max-w-[420px]' : 'max-w-4xl'}`}
-        style={isMobile ? { height: isFullRingMobile ? 'clamp(420px, 118vw, 500px)' : 'clamp(390px, 112vw, 468px)' } : { minHeight: '420px' }}
+        className={`relative mx-auto w-full ${tableMaxWidthClass}`}
+        style={tableHeightStyle}
       >
         <div
           className="absolute inset-[1%] rounded-[45%] shadow-2xl sm:inset-[2%]"
@@ -349,7 +367,7 @@ export default function PokerTable({
         </AnimatePresence>
 
         <AnimatePresence>
-          {isMyTurn && myPlayer && (
+          {!isMobile && isMyTurn && myPlayer && (
             <motion.div
               initial={{ y: 30, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -384,7 +402,7 @@ export default function PokerTable({
       </div>
 
       <AnimatePresence>
-        {isMyTurn && myPlayer && (
+        {isMobile && isMyTurn && myPlayer && (
           <motion.div
             initial={{ y: 12, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
