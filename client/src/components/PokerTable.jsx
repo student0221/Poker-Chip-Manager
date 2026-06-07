@@ -90,6 +90,7 @@ export default function PokerTable({
   const [isMobile, setIsMobile] = useState(false);
   const [isLandscapeMobile, setIsLandscapeMobile] = useState(false);
   const [mobileZoom, setMobileZoom] = useState(1);
+  const [actionDockPosition, setActionDockPosition] = useState('bottom');
 
   const isEnded = !!hand && ['completed', 'showdown'].includes(hand.status);
 
@@ -97,7 +98,8 @@ export default function PokerTable({
     const check = () => {
       const width = window.innerWidth;
       const height = window.innerHeight;
-      const phoneLike = Math.min(width, height) < 640;
+      const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches || navigator.maxTouchPoints > 0;
+      const phoneLike = Math.min(width, height) < 700 || (coarsePointer && Math.max(width, height) < 1200);
       setIsMobile(phoneLike);
       setIsLandscapeMobile(phoneLike && width > height);
     };
@@ -168,6 +170,7 @@ export default function PokerTable({
       myChips={myPlayer?.current_chips || 0}
       bigBlind={hand.big_blind_amount}
       onAction={onAction}
+      dockPosition={actionDockPosition}
     />
   );
 
@@ -208,6 +211,41 @@ export default function PokerTable({
           ))}
         </div>
       )}
+      {isMobile && isMyTurn && myPlayer && (
+        <div className="mb-2 flex items-center justify-center gap-1.5">
+          <span className="text-[11px] font-medium text-slate-500">操作栏位置</span>
+          {[
+            { label: '上方', value: 'top' },
+            { label: '下方', value: 'bottom' }
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setActionDockPosition(option.value)}
+              className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                actionDockPosition === option.value
+                  ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <AnimatePresence>
+        {isMobile && actionDockPosition === 'top' && isMyTurn && myPlayer && (
+          <motion.div
+            initial={{ y: -12, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -12, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            className="mb-2 px-1"
+          >
+            {mobileActionPanel}
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div
         className={`relative mx-auto w-full ${tableMaxWidthClass}`}
         style={{
@@ -432,7 +470,7 @@ export default function PokerTable({
       </div>
 
       <AnimatePresence>
-        {isMobile && isMyTurn && myPlayer && (
+        {isMobile && actionDockPosition === 'bottom' && isMyTurn && myPlayer && (
           <motion.div
             initial={{ y: 12, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
