@@ -291,6 +291,33 @@ export async function postAction(roomId, handId, action, amount, playerId) {
   return parseJsonResponse(res);
 }
 
+export async function setHandShowCards(roomId, handId, showCards) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands/${handId}/show-cards`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId(), show_cards: !!showCards })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function setHandNextChoice(roomId, handId, choice) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands/${handId}/next-choice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId(), choice })
+  });
+  return parseJsonResponse(res);
+}
+
+export async function finishHandShowdown(roomId, handId) {
+  const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands/${handId}/finish-showdown`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: getDeviceId() })
+  });
+  return parseJsonResponse(res);
+}
+
 export async function advanceHand(roomId, handId) {
   const res = await fetch(`${API_BASE}/api/rooms/${roomId}/hands/${handId}/advance`, {
     method: 'POST',

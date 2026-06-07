@@ -4,6 +4,7 @@ const { evaluate7, compareHands } = require('./hand-evaluator');
 const { validateAction, isRoundComplete, getNextSeat, calculatePots, distributePots } = require('./betting-engine');
 
 const ROUNDS = ['preflop', 'flop', 'turn', 'river'];
+const SHOWDOWN_DISPLAY_MS = 30 * 1000;
 
 function getRunoutCards(currentRound, deckCards) {
   if (currentRound === 'preflop') return deckCards.splice(0, 5);
@@ -36,6 +37,10 @@ function clearRoomCurrentHand(roomId, callback) {
     if (err) return callback(err);
     callback(null);
   });
+}
+
+function getShowdownUntil(now = Date.now()) {
+  return now + SHOWDOWN_DISPLAY_MS;
 }
 
 function startHand(roomId, options, callback) {
@@ -347,14 +352,14 @@ function processAction(handId, playerId, action, amount, callback) {
           // Check if hand should end (only 1 player left)
           if (activeHps.length <= 1) {
             // End hand immediately, last player wins
-            db.run('UPDATE hands SET status=?, ended_at=? WHERE id=?', ['completed', now, handId], (endErr) => {
+            db.run(
+              'UPDATE hands SET status=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=? WHERE id=?',
+              ['completed', now, getShowdownUntil(now), handId],
+              (endErr) => {
               if (endErr) { db.run('ROLLBACK'); return callback(endErr); }
               settleHand(handId, newHps, [], (settleErr, result) => {
                 if (settleErr) return rollbackAndCallback(callback, settleErr);
-                clearRoomCurrentHand(roomId, (clearErr) => {
-                  if (clearErr) return rollbackAndCallback(callback, clearErr);
-                  commitAndCallback(callback, { action: 'fold', ended: true, winner: activeHps[0]?.player_id, result });
-                });
+                commitAndCallback(callback, { action: 'fold', ended: true, winner: activeHps[0]?.player_id, result });
               });
             });
             return;
@@ -385,16 +390,13 @@ function processAction(handId, playerId, action, amount, callback) {
             const allCommunity = [...existingCards, ...runoutCards];
 
             db.run(
-              'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=?, total_pot=total_pot+?, ended_at=? WHERE id=?',
-              ['showdown', 'river', JSON.stringify(allCommunity), JSON.stringify(deckCards), null, actualAmount, now, handId],
+              'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=NULL, action_started_at=NULL, total_pot=total_pot+?, ended_at=?, showdown_until=? WHERE id=?',
+              ['showdown', 'river', JSON.stringify(allCommunity), JSON.stringify(deckCards), actualAmount, now, getShowdownUntil(now), handId],
               (sdErr) => {
                 if (sdErr) return rollbackAndCallback(callback, sdErr);
                 settleHand(handId, newHps, allCommunity, (settleErr, result) => {
                   if (settleErr) return rollbackAndCallback(callback, settleErr);
-                  clearRoomCurrentHand(roomId, (clearErr) => {
-                    if (clearErr) return rollbackAndCallback(callback, clearErr);
-                    commitAndCallback(callback, { action, showdown: true, autoRunout: true, communityCards: allCommunity, result });
-                  });
+                  commitAndCallback(callback, { action, showdown: true, autoRunout: true, communityCards: allCommunity, result });
                 });
               }
             );
@@ -428,14 +430,14 @@ function processAction(handId, playerId, action, amount, callback) {
               );
             } else {
               // Showdown
-              db.run('UPDATE hands SET status=?, ended_at=?, total_pot=total_pot+? WHERE id=?', ['showdown', now, actualAmount, handId], (sdErr) => {
+              db.run(
+                'UPDATE hands SET status=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=?, total_pot=total_pot+? WHERE id=?',
+                ['showdown', now, getShowdownUntil(now), actualAmount, handId],
+                (sdErr) => {
                 if (sdErr) return rollbackAndCallback(callback, sdErr);
                 settleHand(handId, newHps, JSON.parse(hand.community_cards || '[]'), (settleErr, result) => {
                   if (settleErr) return rollbackAndCallback(callback, settleErr);
-                  clearRoomCurrentHand(roomId, (clearErr) => {
-                    if (clearErr) return rollbackAndCallback(callback, clearErr);
-                    commitAndCallback(callback, { action, showdown: true, result });
-                  });
+                  commitAndCallback(callback, { action, showdown: true, result });
                 });
               });
             }
@@ -618,6 +620,127 @@ function getHandHistory(roomId, callback) {
   });
 }
 
+function getPlayerForDevice(roomId, deviceId, callback) {
+  if (!deviceId) return callback(new Error('Device id is required'));
+  db.get(
+    'SELECT id FROM players WHERE room_id=? AND device_id=? AND deleted_at IS NULL',
+    [roomId, deviceId],
+    (err, player) => {
+      if (err) return callback(err);
+      if (!player) return callback(new Error('You are not a player in this room'));
+      callback(null, player);
+    }
+  );
+}
+
+function assertShowdownHand(roomId, handId, callback) {
+  getHandState(handId, (err, state) => {
+    if (err) return callback(err);
+    if (!state || state.hand.room_id !== roomId) return callback(new Error('Hand not found in this room'));
+    if (!['completed', 'showdown'].includes(state.hand.status)) return callback(new Error('Hand is not in showdown display'));
+    callback(null, state);
+  });
+}
+
+function setShowCards(roomId, handId, deviceId, showCards, callback) {
+  assertShowdownHand(roomId, handId, (err, state) => {
+    if (err) return callback(err);
+    getPlayerForDevice(roomId, deviceId, (playerErr, player) => {
+      if (playerErr) return callback(playerErr);
+      const handPlayer = state.players.find(p => p.player_id === player.id);
+      if (!handPlayer) return callback(new Error('You are not in this hand'));
+
+      db.run(
+        'UPDATE hand_players SET show_cards=? WHERE hand_id=? AND player_id=?',
+        [showCards ? 1 : 0, handId, player.id],
+        (updateErr) => {
+          if (updateErr) return callback(updateErr);
+          getHandState(handId, callback);
+        }
+      );
+    });
+  });
+}
+
+function setNextChoice(roomId, handId, deviceId, choice, callback) {
+  if (!['continue', 'exit'].includes(choice)) {
+    return callback(new Error('Choice must be continue or exit'));
+  }
+
+  assertShowdownHand(roomId, handId, (err, state) => {
+    if (err) return callback(err);
+    getPlayerForDevice(roomId, deviceId, (playerErr, player) => {
+      if (playerErr) return callback(playerErr);
+      const handPlayer = state.players.find(p => p.player_id === player.id);
+      if (!handPlayer) return callback(new Error('You are not in this hand'));
+
+      db.run(
+        'UPDATE hand_players SET next_choice=?, next_choice_at=? WHERE hand_id=? AND player_id=?',
+        [choice, Date.now(), handId, player.id],
+        (updateErr) => {
+          if (updateErr) return callback(updateErr);
+          getHandState(handId, callback);
+        }
+      );
+    });
+  });
+}
+
+function finishShowdownDisplay(roomId, handId, callback) {
+  assertShowdownHand(roomId, handId, (err, state) => {
+    if (err) return callback(err);
+
+    const now = Date.now();
+    const showdownUntil = Number(state.hand.showdown_until) || Number(state.hand.ended_at) + SHOWDOWN_DISPLAY_MS;
+    const allChosen = state.players.every(p => !!p.next_choice);
+    if (!allChosen && now < showdownUntil) {
+      return callback(new Error('Showdown display is still waiting for player choices'));
+    }
+
+    const exitingIds = state.players
+      .filter(p => p.next_choice !== 'continue')
+      .map(p => p.player_id);
+
+    db.serialize(() => {
+      db.run('BEGIN TRANSACTION');
+      db.run(
+        'UPDATE rooms SET current_hand_id=NULL, updated_at=? WHERE id=? AND current_hand_id=?',
+        [now, roomId, handId],
+        (clearErr) => {
+          if (clearErr) return rollbackAndCallback(callback, clearErr);
+
+          const finish = () => {
+            db.get(
+              'SELECT COUNT(*) AS count FROM players WHERE room_id=? AND deleted_at IS NULL AND left_at IS NULL AND initial_chips > 0',
+              [roomId],
+              (countErr, row) => {
+                if (countErr) return rollbackAndCallback(callback, countErr);
+                commitAndCallback(callback, {
+                  finished: true,
+                  exitedPlayerIds: exitingIds,
+                  activePlayerCount: row?.count || 0,
+                  canStartNextHand: (row?.count || 0) >= 2
+                });
+              }
+            );
+          };
+
+          if (exitingIds.length === 0) return finish();
+          const placeholders = exitingIds.map(() => '?').join(',');
+          db.run(
+            `UPDATE players SET left_at=?, final_chips=initial_chips WHERE room_id=? AND id IN (${placeholders}) AND left_at IS NULL`,
+            [now, roomId, ...exitingIds],
+            (exitErr) => {
+              if (exitErr) return rollbackAndCallback(callback, exitErr);
+              finish();
+            }
+          );
+        }
+      );
+    });
+  });
+}
+
 module.exports = {
   startHand,
   processAction,
@@ -625,5 +748,9 @@ module.exports = {
   getCurrentHandForRoom,
   getHandHistory,
   settleHand,
-  processTimeoutAction
+  processTimeoutAction,
+  setShowCards,
+  setNextChoice,
+  finishShowdownDisplay,
+  SHOWDOWN_DISPLAY_MS
 };

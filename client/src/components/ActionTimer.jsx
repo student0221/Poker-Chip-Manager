@@ -12,14 +12,16 @@ export default function ActionTimer({ isActive, timeoutSeconds = 30, startedAt }
 
     if (!isActive) {
       setTimeLeft(duration);
-      return;
+      return undefined;
     }
+
     setTimeLeft(getRemaining());
     const interval = setInterval(() => {
       const remaining = getRemaining();
       setTimeLeft(remaining);
       if (remaining <= 0.1) clearInterval(interval);
     }, 100);
+
     return () => clearInterval(interval);
   }, [duration, isActive, startedAt]);
 
@@ -29,17 +31,15 @@ export default function ActionTimer({ isActive, timeoutSeconds = 30, startedAt }
   const isUrgent = timeLeft <= Math.min(10, duration / 3);
 
   return (
-    <div className="w-full mt-1">
-      <div className="h-1 w-full bg-slate-700/50 rounded-full overflow-hidden">
+    <div className="mt-1 w-full">
+      <div className="overflow-hidden rounded-full bg-slate-700/60 shadow-inner">
         <div
-          className={`h-full transition-all duration-100 ease-linear rounded-full ${
-            isUrgent ? 'bg-red-500' : 'bg-emerald-400'
-          }`}
+          className={`h-1.5 rounded-full transition-all duration-100 ease-linear ${isUrgent ? 'bg-red-500' : 'bg-emerald-400'}`}
           style={{ width: `${percentage}%` }}
         />
       </div>
-      <div className={`text-[10px] text-center mt-0.5 font-mono ${isUrgent ? 'text-red-400' : 'text-slate-400'}`}>
-        {Math.ceil(timeLeft)}s
+      <div className={`mt-1 text-center font-mono text-[10px] ${isUrgent ? 'text-red-300' : 'text-slate-300'}`}>
+        {Math.ceil(timeLeft)} 秒
       </div>
     </div>
   );

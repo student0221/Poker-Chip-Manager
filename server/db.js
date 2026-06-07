@@ -170,6 +170,16 @@ db.serialize(() => {
       addColumnIfMissing(cols, 'deck_snapshot', 'ALTER TABLE hands ADD COLUMN deck_snapshot TEXT DEFAULT \'[]\'');
       addColumnIfMissing(cols, 'action_timeout_seconds', 'ALTER TABLE hands ADD COLUMN action_timeout_seconds INTEGER DEFAULT 30');
       addColumnIfMissing(cols, 'action_started_at', 'ALTER TABLE hands ADD COLUMN action_started_at INTEGER');
+      addColumnIfMissing(cols, 'showdown_until', 'ALTER TABLE hands ADD COLUMN showdown_until INTEGER');
+    }
+  });
+
+  db.all('PRAGMA table_info(hand_players)', (err, cols) => {
+    if (err) return;
+    if (cols && cols.length > 0) {
+      addColumnIfMissing(cols, 'show_cards', 'ALTER TABLE hand_players ADD COLUMN show_cards INTEGER NOT NULL DEFAULT 0');
+      addColumnIfMissing(cols, 'next_choice', 'ALTER TABLE hand_players ADD COLUMN next_choice TEXT DEFAULT NULL');
+      addColumnIfMissing(cols, 'next_choice_at', 'ALTER TABLE hand_players ADD COLUMN next_choice_at INTEGER DEFAULT NULL');
     }
   });
 

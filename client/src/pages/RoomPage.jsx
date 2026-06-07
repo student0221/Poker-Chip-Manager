@@ -6,9 +6,10 @@ import {
   adminAddRoomPlayer,
   deleteRoom,
   endRoom,
+  finishHandShowdown,
   getCurrentHand,
-  getHandHistory,
   getDeviceId,
+  getHandHistory,
   getNetworkInfo,
   getRoom,
   getRoomPlayers,
@@ -17,6 +18,8 @@ import {
   joinRoom,
   postAction,
   resetRoom,
+  setHandNextChoice,
+  setHandShowCards,
   setRoomMode,
   settleRoom,
   startHand,
@@ -71,8 +74,7 @@ export default function RoomPage() {
     setPlayers(nextPlayers);
     setNetworkInfo(info);
 
-    const deviceId = getDeviceId();
-    const me = nextPlayers.find((p) => p.device_id === deviceId);
+    const me = nextPlayers.find((p) => p.device_id === getDeviceId());
     setMyPlayerId(me?.id || null);
 
     if (nextRoom.status === 'settling') {
@@ -141,6 +143,9 @@ export default function RoomPage() {
     socket.on('hand:timeout', refreshSilently);
     socket.on('hand:turn', refreshSilently);
     socket.on('hand:ended', refreshSilently);
+    socket.on('hand:show-choice', refreshSilently);
+    socket.on('hand:next-choice', refreshSilently);
+    socket.on('hand:showdown-finished', refreshSilently);
     socket.on('room:deleted', () => {
       setMessage('房间已解散');
       navigate('/rooms');
@@ -208,8 +213,8 @@ export default function RoomPage() {
     });
   };
 
-  const handleStartHand = () => {
-    runAction(async () => {
+  const handleStartHand = async () => {
+    await runAction(async () => {
       await startHand(roomId, {
         sb: room.sb_amount,
         bb: room.bb_amount,
@@ -228,6 +233,41 @@ export default function RoomPage() {
     } catch (err) {
       setMessage(err.message);
     }
+  };
+
+  const handleShowCards = (showCards) => {
+    runAction(async () => {
+      if (!handState?.hand?.id) throw new Error('当前没有可展示的牌局');
+      await setHandShowCards(roomId, handState.hand.id, showCards);
+    });
+  };
+
+  const handleNextChoice = (choice) => {
+    runAction(async () => {
+      if (!handState?.hand?.id) throw new Error('当前没有可选择的牌局');
+      await setHandNextChoice(roomId, handState.hand.id, choice);
+    });
+  };
+
+  const handleFinishShowdown = ({ startNext = false } = {}) => {
+    runAction(async () => {
+      if (!handState?.hand?.id) throw new Error('当前没有可结束展示的牌局');
+      const result = await finishHandShowdown(roomId, handState.hand.id);
+      if (startNext) {
+        if (!result.canStartNextHand) {
+          setMessage('继续玩家不足 2 人，无法开始下一局');
+          return;
+        }
+        await startHand(roomId, {
+          sb: room.sb_amount,
+          bb: room.bb_amount,
+          action_timeout_seconds: room.action_timeout_seconds
+        });
+        setMessage('展示结束，新一手已开始');
+      } else {
+        setMessage('展示已结束');
+      }
+    });
   };
 
   const handleSetMode = (mode) => {
@@ -259,11 +299,7 @@ export default function RoomPage() {
                 <StatusBadge status={room.status} />
                 <span className="text-sm text-slate-500">房间码 {room.id}</span>
                 <span className="text-sm text-slate-500">1 筹码 = {room.chip_rate}</span>
-                {isHost && (
-                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
-                    当前设备是房主
-                  </span>
-                )}
+                {isHost && <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">当前设备是房主</span>}
               </div>
             </div>
           </div>
@@ -283,11 +319,7 @@ export default function RoomPage() {
           </Card>
         </div>
 
-        {message && (
-          <Card className="border-blue-100 bg-blue-50/80 p-4 text-sm text-slate-700 shadow-sm">
-            {message}
-          </Card>
-        )}
+        {message && <Card className="border-blue-100 bg-blue-50/80 p-4 text-sm text-slate-700 shadow-sm">{message}</Card>}
 
         {isHost && (
           <Card className="p-6">
@@ -297,32 +329,12 @@ export default function RoomPage() {
                 <p className="mt-1 text-sm text-slate-500">控制房间状态、切换模式，并维护牌桌节奏。</p>
               </div>
               <div className="flex flex-wrap gap-3">
-                {room.status === 'pending' && (
-                  <Button variant="success" onClick={() => runAction(() => startRoom(roomId))}>
-                    开始比赛
-                  </Button>
-                )}
-                {room.status === 'running' && (
-                  <Button variant="warning" onClick={() => runAction(() => endRoom(roomId))}>
-                    结束比赛
-                  </Button>
-                )}
-                {room.status === 'settling' && (
-                  <Button variant="primary" onClick={() => runAction(() => settleRoom(roomId))}>
-                    执行结算
-                  </Button>
-                )}
-                {room.status === 'completed' && (
-                  <Button variant="success" onClick={() => runAction(() => resetRoom(roomId))}>
-                    重置房间
-                  </Button>
-                )}
-                <Button variant="ghost" onClick={() => refresh().catch((err) => setMessage(err.message))}>
-                  刷新
-                </Button>
-                <Button variant="danger" onClick={handleDeleteRoom}>
-                  解散房间
-                </Button>
+                {room.status === 'pending' && <Button variant="success" onClick={() => runAction(() => startRoom(roomId))}>开始比赛</Button>}
+                {room.status === 'running' && <Button variant="warning" onClick={() => runAction(() => endRoom(roomId))}>结束比赛</Button>}
+                {room.status === 'settling' && <Button variant="primary" onClick={() => runAction(() => settleRoom(roomId))}>执行结算</Button>}
+                {room.status === 'completed' && <Button variant="success" onClick={() => runAction(() => resetRoom(roomId))}>重置房间</Button>}
+                <Button variant="ghost" onClick={() => refresh().catch((err) => setMessage(err.message))}>刷新</Button>
+                <Button variant="danger" onClick={handleDeleteRoom}>解散房间</Button>
               </div>
             </div>
 
@@ -330,18 +342,10 @@ export default function RoomPage() {
               <div className="mt-5 border-t border-slate-100 pt-5">
                 <div className="mb-2 text-sm font-semibold text-slate-700">游戏模式</div>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant={room.game_mode === 'tournament' ? 'primary' : 'ghost'}
-                    size="sm"
-                    onClick={() => handleSetMode('tournament')}
-                  >
+                  <Button variant={room.game_mode === 'tournament' ? 'primary' : 'ghost'} size="sm" onClick={() => handleSetMode('tournament')}>
                     锦标赛
                   </Button>
-                  <Button
-                    variant={room.game_mode === 'cash' ? 'primary' : 'ghost'}
-                    size="sm"
-                    onClick={() => handleSetMode('cash')}
-                  >
+                  <Button variant={room.game_mode === 'cash' ? 'primary' : 'ghost'} size="sm" onClick={() => handleSetMode('cash')}>
                     现金局
                   </Button>
                 </div>
@@ -366,6 +370,9 @@ export default function RoomPage() {
                     isHost={isHost}
                     onAction={handleAction}
                     onStartHand={handleStartHand}
+                    onShowCards={handleShowCards}
+                    onNextChoice={handleNextChoice}
+                    onFinishShowdown={handleFinishShowdown}
                   />
                 </Card>
                 {handState?.actions?.length > 0 && (
@@ -401,7 +408,7 @@ export default function RoomPage() {
                             <div className="text-sm font-bold text-slate-800 sm:text-base">{sanitizeText(player.nickname)}</div>
                             <div className="text-[11px] text-slate-500 sm:text-xs">
                               买入 {player.initial_chips} 筹码
-                              {player.left_at ? ` · 已离场 ${player.final_chips}` : ''}
+                              {player.left_at ? ` · 已离桌 ${player.final_chips ?? player.initial_chips}` : ''}
                             </div>
                           </div>
                         </div>
@@ -415,11 +422,7 @@ export default function RoomPage() {
                               value={chipAdds[player.id] || ''}
                               onChange={(e) => setChipAdds({ ...chipAdds, [player.id]: e.target.value })}
                             />
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => runAction(() => addRoomChips(roomId, player.id, Number(chipAdds[player.id])))}
-                            >
+                            <Button size="sm" variant="ghost" onClick={() => runAction(() => addRoomChips(roomId, player.id, Number(chipAdds[player.id])))}>
                               补筹码
                             </Button>
                           </div>
@@ -433,9 +436,7 @@ export default function RoomPage() {
 
             {progress && (
               <Card className="p-6">
-                <h2 className="mb-3 text-lg font-bold text-slate-800">
-                  提交进度 ({progress.submitted_count}/{progress.total})
-                </h2>
+                <h2 className="mb-3 text-lg font-bold text-slate-800">提交进度 ({progress.submitted_count}/{progress.total})</h2>
                 <div className="space-y-2">
                   {progress.pending.map((player) => (
                     <div key={player.id} className="rounded-lg bg-amber-50 p-3 text-amber-700">
@@ -474,16 +475,11 @@ export default function RoomPage() {
             {room.status === 'running' && (
               <Card>
                 <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 text-white sm:p-5">
-                  <h2 className="font-bold text-sm sm:text-base">玩家报名</h2>
+                  <h2 className="text-sm font-bold sm:text-base">玩家报名</h2>
                   <p className="mt-1 text-xs text-blue-100">输入昵称和筹码后即可加入当前牌桌。</p>
                 </div>
                 <form onSubmit={handleJoin} className="space-y-3 p-4 sm:space-y-4 sm:p-5">
-                  <Input
-                    label="昵称"
-                    value={joinForm.nickname}
-                    onChange={(e) => setJoinForm({ ...joinForm, nickname: e.target.value })}
-                    required
-                  />
+                  <Input label="昵称" value={joinForm.nickname} onChange={(e) => setJoinForm({ ...joinForm, nickname: e.target.value })} required />
                   <Input
                     label="买入筹码"
                     type="number"
@@ -491,9 +487,7 @@ export default function RoomPage() {
                     onChange={(e) => setJoinForm({ ...joinForm, initial_chips: e.target.value })}
                     required
                   />
-                  <Button type="submit" variant="primary" size="lg">
-                    提交报名
-                  </Button>
+                  <Button type="submit" variant="primary" size="lg">提交报名</Button>
                 </form>
               </Card>
             )}
@@ -501,16 +495,11 @@ export default function RoomPage() {
             {isHost && ['pending', 'running', 'settling'].includes(room.status) && (
               <Card>
                 <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-4 text-white sm:p-5">
-                  <h2 className="font-bold text-sm sm:text-base">房主添加玩家</h2>
+                  <h2 className="text-sm font-bold sm:text-base">房主添加玩家</h2>
                   <p className="mt-1 text-xs text-emerald-100">适合代报名、线下登记或补录玩家。</p>
                 </div>
                 <form onSubmit={handleAdminAdd} className="space-y-3 p-4 sm:space-y-4 sm:p-5">
-                  <Input
-                    label="昵称"
-                    value={adminForm.nickname}
-                    onChange={(e) => setAdminForm({ ...adminForm, nickname: e.target.value })}
-                    required
-                  />
+                  <Input label="昵称" value={adminForm.nickname} onChange={(e) => setAdminForm({ ...adminForm, nickname: e.target.value })} required />
                   <Input
                     label="买入筹码"
                     type="number"
@@ -518,9 +507,7 @@ export default function RoomPage() {
                     onChange={(e) => setAdminForm({ ...adminForm, initial_chips: e.target.value })}
                     required
                   />
-                  <Button type="submit" variant="success" size="lg">
-                    添加玩家
-                  </Button>
+                  <Button type="submit" variant="success" size="lg">添加玩家</Button>
                 </form>
               </Card>
             )}
@@ -528,16 +515,11 @@ export default function RoomPage() {
             {room.status === 'settling' && (
               <Card>
                 <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-4 text-white sm:p-5">
-                  <h2 className="font-bold text-sm sm:text-base">提交最终筹码</h2>
+                  <h2 className="text-sm font-bold sm:text-base">提交最终筹码</h2>
                   <p className="mt-1 text-xs text-amber-100">用于锦标赛或线下结算核对。</p>
                 </div>
                 <form onSubmit={handleSubmitFinal} className="space-y-3 p-4 sm:space-y-4 sm:p-5">
-                  <Input
-                    label="昵称"
-                    value={finalForm.nickname}
-                    onChange={(e) => setFinalForm({ ...finalForm, nickname: e.target.value })}
-                    required
-                  />
+                  <Input label="昵称" value={finalForm.nickname} onChange={(e) => setFinalForm({ ...finalForm, nickname: e.target.value })} required />
                   <Input
                     label="最终筹码"
                     type="number"
@@ -545,9 +527,7 @@ export default function RoomPage() {
                     onChange={(e) => setFinalForm({ ...finalForm, final_chips: e.target.value })}
                     required
                   />
-                  <Button type="submit" variant="warning" size="lg">
-                    提交
-                  </Button>
+                  <Button type="submit" variant="warning" size="lg">提交</Button>
                 </form>
               </Card>
             )}
@@ -560,7 +540,7 @@ export default function RoomPage() {
                     <div key={h.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
                       <div>
                         <span className="font-medium text-slate-700">#{handHistory.length - idx}</span>
-                        <span className="ml-2 text-slate-400">{h.status === 'showdown' ? '摊牌结束' : '提前结束'}</span>
+                        <span className="ml-2 text-slate-400">{h.status === 'showdown' ? '摊牌结束' : h.status === 'completed' ? '提前结束' : h.status}</span>
                       </div>
                       <div className="text-slate-500">底池 {h.total_pot}</div>
                     </div>
