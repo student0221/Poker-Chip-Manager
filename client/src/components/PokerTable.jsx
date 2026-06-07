@@ -142,7 +142,9 @@ export default function PokerTable({
   const zoomOptions = [
     { label: '100%', value: 1 },
     { label: '90%', value: 0.9 },
-    { label: '80%', value: 0.8 }
+    { label: '80%', value: 0.8 },
+    { label: '70%', value: 0.7 },
+    { label: '60%', value: 0.6 }
   ];
 
   if (!hand) {
@@ -171,6 +173,7 @@ export default function PokerTable({
       bigBlind={hand.big_blind_amount}
       onAction={onAction}
       dockPosition={actionDockPosition}
+      scale={mobileZoom}
     />
   );
 
@@ -182,6 +185,8 @@ export default function PokerTable({
       myChips={myPlayer?.current_chips || 0}
       bigBlind={hand.big_blind_amount}
       onAction={onAction}
+      dockPosition={actionDockPosition}
+      scale={mobileZoom}
     />
   );
 
@@ -341,6 +346,12 @@ export default function PokerTable({
                   />
                 )}
 
+                {isMe && (
+                  <div className="absolute -left-1.5 -top-1.5 z-40 rounded-full border border-white bg-blue-600 px-1.5 py-0.5 text-[8px] font-black leading-none text-white shadow-lg sm:-left-2 sm:-top-2 sm:text-[10px]">
+                    我
+                  </div>
+                )}
+
                 {positionBadges.length > 0 && (
                   <div className={`absolute left-1/2 z-30 flex -translate-x-1/2 items-center justify-center gap-0.5 whitespace-nowrap ${isFullRingMobile ? '-top-3.5' : 'top-[-16px] sm:top-[-24px]'}`}>
                     {positionBadges.map((badge) => (
@@ -359,7 +370,7 @@ export default function PokerTable({
                 <div
                   className={`flex flex-col items-center rounded-md transition-all backdrop-blur-sm ${
                     compactSeat ? 'min-w-[30px] gap-0 bg-black/35 px-0.5 py-0.5' : isCrowdedMobile ? 'min-w-[38px] gap-0.5 bg-black/40 px-0.5 py-0.5' : 'min-w-[46px] gap-0.5 bg-black/40 px-1 py-1 sm:min-w-[64px] sm:rounded-xl sm:px-1.5'
-                  } ${emphasizeSeat ? 'scale-105' : ''} ${isCurrent ? 'bg-white/15' : ''} ${isFolded ? 'opacity-45' : ''}`}
+                  } ${emphasizeSeat ? 'scale-105' : ''} ${isMe ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-emerald-950' : ''} ${isCurrent ? 'bg-white/15' : ''} ${isFolded ? 'opacity-45' : ''}`}
                 >
                   <AnimatePresence>
                     {player.current_bet > 0 && (

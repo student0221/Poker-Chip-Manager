@@ -9,7 +9,8 @@ export default function ActionPanel({
   onAction,
   disabled = false,
   compact = false,
-  dockPosition = 'bottom'
+  dockPosition = 'bottom',
+  scale = 1
 }) {
   const [raiseAmount, setRaiseAmount] = useState('');
   const [raiseOpen, setRaiseOpen] = useState(false);
@@ -105,7 +106,13 @@ export default function ActionPanel({
     const dockClass = dockPosition === 'bottom' ? 'sticky bottom-2' : '';
 
     return (
-      <div className={`${dockClass} z-40 rounded-2xl border border-slate-700 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-sm`}>
+      <div
+        className={`${dockClass} z-40 rounded-2xl border border-slate-700 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-sm`}
+        style={{
+          transform: `scale(${scale})`,
+          transformOrigin: dockPosition === 'top' ? 'top center' : 'bottom center'
+        }}
+      >
         <div className="mb-2 flex items-center justify-between gap-2 px-1 text-[11px] text-slate-300">
           <span>当前下注 <b className="text-white">{currentBet}</b></span>
           <span>剩余 <b className="text-emerald-300">{myChips}</b></span>
