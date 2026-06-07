@@ -7,6 +7,7 @@ const { DEFAULT_ROOM_ID } = require('../constants');
 const { getDiscoveredRooms } = require('../discovery');
 const { emitRoomEvent } = require('../socket');
 const { cleanupRoomData } = require('../room-cleanup');
+const roomGame = require('../services/room-game-service');
 
 const ROOM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -43,6 +44,10 @@ function requireHost(req, res, room, callback) {
   callback();
 }
 
+function sendServiceError(res, err) {
+  res.status(err.status || 500).json({ error: err.message, currentStatus: err.currentStatus });
+}
+
 function createRoomWithRetry(input, attempts, res) {
   const roomId = generateRoomId();
   db.run(
@@ -64,36 +69,6 @@ function createRoomWithRetry(input, attempts, res) {
       });
     }
   );
-}
-
-function handlePlayerInsert(res, roomId, params, avatarPath) {
-  const sql = avatarPath
-    ? 'INSERT INTO players (room_id, name, nickname, initial_chips, device_id, avatar) VALUES (?, ?, ?, ?, ?, ?)'
-    : 'INSERT INTO players (room_id, name, nickname, initial_chips, device_id) VALUES (?, ?, ?, ?, ?)';
-  const values = avatarPath ? [roomId, ...params, avatarPath] : [roomId, ...params];
-
-  db.run(sql, values, function(err) {
-    if (err) {
-      if (err.message && err.message.includes('UNIQUE constraint failed')) {
-        return res.status(409).json({ error: 'Nickname is already in use' });
-      }
-      return res.status(500).json({ error: err.message });
-    }
-    db.get('SELECT * FROM players WHERE id=? AND room_id=?', [this.lastID, roomId], (getErr, row) => {
-      if (getErr) return res.status(500).json({ error: getErr.message });
-      emitRoomEvent(roomId, 'players:changed', { player: row });
-      res.status(201).json(row);
-    });
-  });
-}
-
-function enrichPlayer(player, chipRate) {
-  const finalChips = player.final_chips ?? 0;
-  return {
-    ...player,
-    total_settlement: player.initial_chips * chipRate,
-    final_settlement: finalChips * chipRate
-  };
 }
 
 router.post('/rooms', (req, res) => {
@@ -279,49 +254,34 @@ router.get('/rooms/:roomId/players', (req, res) => {
 
 router.post('/rooms/:roomId/players/join', upload.single('avatar'), (req, res) => {
   requireRoom(req, res, (room) => {
-    if (room.status !== 'running') {
-      return res.status(403).json({ error: 'Game is not accepting player signups' });
-    }
-
-    const { name, nickname, initial_chips, device_id } = req.body;
-    if (!nickname || initial_chips === undefined || initial_chips < 0) {
-      return res.status(400).json({ error: 'Invalid player data' });
-    }
-
-    const realName = name && name.trim() ? name.trim() : nickname;
     const avatarPath = req.file ? `/uploads/avatars/${req.file.filename}` : null;
-
-    if (device_id) {
-      db.get(
-        'SELECT id FROM players WHERE room_id=? AND device_id=? AND left_at IS NULL AND deleted_at IS NULL',
-        [room.id, device_id],
-        (deviceErr, row) => {
-          if (deviceErr) return res.status(500).json({ error: deviceErr.message });
-          if (row) return res.status(409).json({ error: 'This device has already joined the current game' });
-          handlePlayerInsert(res, room.id, [realName, nickname, initial_chips, device_id || null], avatarPath);
-        }
-      );
-    } else {
-      handlePlayerInsert(res, room.id, [realName, nickname, initial_chips, device_id || null], avatarPath);
-    }
+    roomGame.createPlayer(
+      room,
+      req.body,
+      { avatarPath, enforceDeviceUnique: true, requireRunning: true },
+      (err, player) => {
+        if (err) return sendServiceError(res, err);
+        emitRoomEvent(room.id, 'players:changed', { player });
+        res.status(201).json(player);
+      }
+    );
   });
 });
 
 router.post('/rooms/:roomId/players/admin-add', upload.single('avatar'), (req, res) => {
   requireRoom(req, res, (room) => {
     requireHost(req, res, room, () => {
-      if (!['pending', 'running', 'settling'].includes(room.status)) {
-        return res.status(409).json({ error: 'Players can only be added before settlement completes', currentStatus: room.status });
-      }
-
-      const { name, nickname, initial_chips } = req.body;
-      if (!nickname || initial_chips === undefined || initial_chips < 0) {
-        return res.status(400).json({ error: 'Invalid player data' });
-      }
-
-      const realName = name && name.trim() ? name.trim() : nickname;
       const avatarPath = req.file ? `/uploads/avatars/${req.file.filename}` : null;
-      handlePlayerInsert(res, room.id, [realName, nickname, initial_chips, null], avatarPath);
+      roomGame.createPlayer(
+        room,
+        { ...req.body, device_id: null },
+        { avatarPath, allowedStatuses: ['pending', 'running', 'settling'] },
+        (err, player) => {
+          if (err) return sendServiceError(res, err);
+          emitRoomEvent(room.id, 'players:changed', { player });
+          res.status(201).json(player);
+        }
+      );
     });
   });
 });
@@ -329,29 +289,11 @@ router.post('/rooms/:roomId/players/admin-add', upload.single('avatar'), (req, r
 router.post('/rooms/:roomId/players/:id/add-chips', (req, res) => {
   requireRoom(req, res, (room) => {
     requireHost(req, res, room, () => {
-      const amount = Number(req.body.amount);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        return res.status(400).json({ error: 'Invalid chip amount' });
-      }
-      if (room.status !== 'running') {
-        return res.status(409).json({ error: 'Chips can only be added while the game is running', currentStatus: room.status });
-      }
-
-      db.get('SELECT * FROM players WHERE id=? AND room_id=? AND deleted_at IS NULL', [req.params.id, room.id], (err, player) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!player) return res.status(404).json({ error: 'Player not found' });
-        if (player.left_at) return res.status(409).json({ error: 'Cannot add chips after the player has left' });
-
-        const nextInitialChips = player.initial_chips + amount;
-        db.run('UPDATE players SET initial_chips=? WHERE id=? AND room_id=?', [nextInitialChips, player.id, room.id], (runErr) => {
-          if (runErr) return res.status(500).json({ error: runErr.message });
-          db.get('SELECT * FROM players WHERE id=? AND room_id=?', [player.id, room.id], (getErr, row) => {
-            if (getErr) return res.status(500).json({ error: getErr.message });
-            emitRoomEvent(room.id, 'chips:added', { playerId: player.id, amount, total: row.initial_chips });
-            emitRoomEvent(room.id, 'players:changed');
-            res.json({ ...row, added_chips: amount, message: 'Chips added successfully' });
-          });
-        });
+      roomGame.addChips(room, req.params.id, req.body.amount, (err, player) => {
+        if (err) return sendServiceError(res, err);
+        emitRoomEvent(room.id, 'chips:added', { playerId: player.id, amount: player.added_chips, total: player.initial_chips });
+        emitRoomEvent(room.id, 'players:changed');
+        res.json(player);
       });
     });
   });
@@ -359,31 +301,12 @@ router.post('/rooms/:roomId/players/:id/add-chips', (req, res) => {
 
 router.post('/rooms/:roomId/players/:id/leave', (req, res) => {
   const { final_chips, device_id } = req.body;
-  if (final_chips === undefined || final_chips < 0) {
-    return res.status(400).json({ error: 'Invalid final_chips value' });
-  }
 
   requireRoom(req, res, (room) => {
-    if (room.status !== 'running') {
-      return res.status(409).json({ error: 'Players can only leave while the game is running', currentStatus: room.status });
-    }
-
-    db.get('SELECT * FROM players WHERE id=? AND room_id=? AND deleted_at IS NULL', [req.params.id, room.id], (err, player) => {
-      if (err) return res.status(500).json({ error: err.message });
-      if (!player) return res.status(404).json({ error: 'Player not found' });
-      if (player.left_at) return res.status(409).json({ error: 'Player has already left' });
-      if (device_id && player.device_id && player.device_id !== device_id) {
-        return res.status(403).json({ error: 'Device mismatch for player leave request' });
-      }
-
-      db.run('UPDATE players SET final_chips=?, left_at=? WHERE id=? AND room_id=?', [final_chips, Date.now(), player.id, room.id], (runErr) => {
-        if (runErr) return res.status(500).json({ error: runErr.message });
-        db.get('SELECT * FROM players WHERE id=? AND room_id=?', [player.id, room.id], (getErr, row) => {
-          if (getErr) return res.status(500).json({ error: getErr.message });
-          emitRoomEvent(room.id, 'players:changed', { player: row });
-          res.json({ ...row, message: 'Player leave recorded' });
-        });
-      });
+    roomGame.leavePlayer(room, req.params.id, final_chips, device_id, (err, player) => {
+      if (err) return sendServiceError(res, err);
+      emitRoomEvent(room.id, 'players:changed', { player });
+      res.json(player);
     });
   });
 });
@@ -392,94 +315,29 @@ router.post('/rooms/:roomId/players/:id/final', (req, res) => {
   const { final_chips } = req.body;
 
   requireRoom(req, res, (room) => {
-    if (room.status !== 'settling') {
-      return res.status(409).json({ error: 'Final chips can only be updated during settlement', currentStatus: room.status });
-    }
-
-    db.run('UPDATE players SET final_chips=? WHERE id=? AND room_id=?', [final_chips, req.params.id, room.id], function(runErr) {
-      if (runErr) return res.status(500).json({ error: runErr.message });
-      if (this.changes === 0) return res.status(404).json({ error: 'Player not found' });
-      db.get('SELECT id, name, nickname, initial_chips, final_chips, net_profit, avatar FROM players WHERE id=? AND room_id=?', [req.params.id, room.id], (getErr, row) => {
-        if (getErr) return res.status(500).json({ error: getErr.message });
-        const chip_net = row.final_chips - row.initial_chips;
-        const money_net = chip_net * room.chip_rate;
-        const total_settlement = row.initial_chips * room.chip_rate;
-        emitRoomEvent(room.id, 'settle:progress');
-        res.json({ ...row, chip_net, money_net, chip_rate: room.chip_rate, total_settlement });
-      });
+    roomGame.updateFinalById(room, req.params.id, final_chips, (err, player) => {
+      if (err) return sendServiceError(res, err);
+      emitRoomEvent(room.id, 'settle:progress');
+      res.json(player);
     });
   });
 });
 
 router.post('/rooms/:roomId/submit-final', (req, res) => {
-  const { nickname, final_chips, device_id } = req.body;
-  if (!nickname || final_chips === undefined) {
-    return res.status(400).json({ error: 'Nickname and final chips are required' });
-  }
-
   requireRoom(req, res, (room) => {
-    if (room.status !== 'settling') {
-      return res.status(409).json({ error: 'Final chips can only be submitted during settlement', currentStatus: room.status });
-    }
-
-    db.all('SELECT * FROM players WHERE room_id=? AND nickname=? AND deleted_at IS NULL', [room.id, nickname], (playersErr, players) => {
-      if (playersErr) return res.status(500).json({ error: playersErr.message });
-      if (!players || players.length === 0) return res.status(404).json({ error: 'Player not found for that nickname' });
-      if (players.length > 1) return res.status(409).json({ error: 'Multiple players match this nickname, please use admin override' });
-
-      const player = players[0];
-      if (device_id && player.device_id && player.device_id !== device_id) {
-        return res.status(403).json({ error: 'Device mismatch for final chip submission' });
-      }
-
-      db.run('UPDATE players SET final_chips=? WHERE id=? AND room_id=?', [final_chips, player.id, room.id], (runErr) => {
-        if (runErr) return res.status(500).json({ error: runErr.message });
-        const chip_net = final_chips - player.initial_chips;
-        const money_net = chip_net * room.chip_rate;
-        const total_settlement = player.initial_chips * room.chip_rate;
-        emitRoomEvent(room.id, 'settle:progress');
-        res.json({
-          id: player.id,
-          name: player.name,
-          nickname: player.nickname,
-          initial_chips: player.initial_chips,
-          final_chips,
-          chip_net,
-          money_net,
-          chip_rate: room.chip_rate,
-          total_settlement
-        });
-      });
+    roomGame.submitFinalByNickname(room, req.body, (err, player) => {
+      if (err) return sendServiceError(res, err);
+      emitRoomEvent(room.id, 'settle:progress');
+      res.json(player);
     });
   });
 });
 
 router.get('/rooms/:roomId/settle/progress', (req, res) => {
   requireRoom(req, res, (room) => {
-    db.all('SELECT * FROM players WHERE room_id=? AND deleted_at IS NULL ORDER BY created_at', [room.id], (playersErr, players) => {
-      if (playersErr) return res.status(500).json({ error: playersErr.message });
-
-      const submitted = [];
-      const pending = [];
-      for (const player of players) {
-        if (player.final_chips !== null) {
-          const chip_net = player.final_chips - player.initial_chips;
-          const money_net = chip_net * room.chip_rate;
-          const total_settlement = player.initial_chips * room.chip_rate;
-          submitted.push({ ...player, chip_net, money_net, total_settlement });
-        } else {
-          pending.push(player);
-        }
-      }
-      submitted.sort((a, b) => b.money_net - a.money_net);
-      res.json({
-        chip_rate: room.chip_rate,
-        total: players.length,
-        submitted_count: submitted.length,
-        pending_count: pending.length,
-        submitted,
-        pending
-      });
+    roomGame.getSettleProgress(room, (err, progress) => {
+      if (err) return sendServiceError(res, err);
+      res.json(progress);
     });
   });
 });
@@ -487,44 +345,11 @@ router.get('/rooms/:roomId/settle/progress', (req, res) => {
 router.post('/rooms/:roomId/settle', (req, res) => {
   requireRoom(req, res, (room) => {
     requireHost(req, res, room, () => {
-      if (room.status !== 'settling') {
-        return res.status(409).json({ error: 'Settlement is only available during settlement status', currentStatus: room.status });
-      }
-
-      db.all('SELECT * FROM players WHERE room_id=? AND deleted_at IS NULL', [room.id], (playersErr, players) => {
-        if (playersErr) return res.status(500).json({ error: playersErr.message });
-
-        let completed = 0;
-        const total = players.length;
-        const finishRoom = () => {
-          db.run("UPDATE rooms SET status='completed', updated_at=? WHERE id=? AND status='settling'", [Date.now(), room.id], function(err) {
-            if (err) return res.status(500).json({ error: err.message });
-            if (this.changes === 0) return res.status(409).json({ error: 'Settlement has already been completed' });
-            db.all(
-              'SELECT id, name, nickname, initial_chips, final_chips, net_profit, avatar FROM players WHERE room_id=? AND deleted_at IS NULL ORDER BY net_profit DESC',
-              [room.id],
-              (rankErr, rankings) => {
-                if (rankErr) return res.status(500).json({ error: rankErr.message });
-                const enriched = (rankings || []).map((player) => enrichPlayer(player, room.chip_rate));
-                emitRoomEvent(room.id, 'room:state', { status: 'completed' });
-                emitRoomEvent(room.id, 'game:settled', { rankings: enriched });
-                res.json({ rankings: enriched });
-              }
-            );
-          });
-        };
-
-        if (total === 0) return finishRoom();
-
-        for (const player of players) {
-          const final = player.final_chips !== null ? player.final_chips : 0;
-          const netProfit = (final - player.initial_chips) * room.chip_rate;
-          db.run('UPDATE players SET final_chips=?, net_profit=? WHERE id=? AND room_id=?', [final, netProfit, player.id, room.id], (runErr) => {
-            if (runErr) return res.status(500).json({ error: runErr.message });
-            completed++;
-            if (completed === total) finishRoom();
-          });
-        }
+      roomGame.settleRoom(room, (err, result) => {
+        if (err) return sendServiceError(res, err);
+        emitRoomEvent(room.id, 'room:state', { status: 'completed' });
+        emitRoomEvent(room.id, 'game:settled', { rankings: result.rankings });
+        res.json(result);
       });
     });
   });
@@ -532,14 +357,10 @@ router.post('/rooms/:roomId/settle', (req, res) => {
 
 router.get('/rooms/:roomId/rankings', (req, res) => {
   requireRoom(req, res, (room) => {
-    db.all(
-      'SELECT id, name, nickname, initial_chips, final_chips, net_profit, avatar FROM players WHERE room_id=? AND deleted_at IS NULL ORDER BY net_profit DESC',
-      [room.id],
-      (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ rankings: (rows || []).map((player) => enrichPlayer(player, room.chip_rate)) });
-      }
-    );
+    roomGame.getRankings(room, (err, result) => {
+      if (err) return sendServiceError(res, err);
+      res.json(result);
+    });
   });
 });
 
