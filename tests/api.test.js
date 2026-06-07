@@ -962,6 +962,7 @@ test('cash game showdown display keeps current hand and respects voluntary card 
   expect(bobViewBefore.status).toBe(200);
   expect(bobViewBefore.body.hand.id).toBe(handRes.body.handId);
   expect(bobViewBefore.body.hand.showdown_until).toBeGreaterThan(Date.now());
+  expect(JSON.parse(bobViewBefore.body.hand.community_cards)).toHaveLength(5);
   const aliceBefore = bobViewBefore.body.players.find(p => p.player_id === aliceRes.body.id);
   expect(JSON.parse(aliceBefore.hole_cards)).toHaveLength(0);
 
@@ -1044,6 +1045,54 @@ test('cash game showdown choices can finish early and timeout defaults undecided
   expect(nextHandRes.status).toBe(201);
   const nextPlayers = await new Promise((resolve, reject) => {
     db.all('SELECT player_id FROM hand_players WHERE hand_id=? ORDER BY player_id', [nextHandRes.body.handId], (err, rows) => err ? reject(err) : resolve(rows));
+  });
+  expect(nextPlayers.map(p => p.player_id)).toEqual([aliceRes.body.id, bobRes.body.id]);
+});
+
+test('cash game starts the next hand automatically when everyone continues', async () => {
+  const roomRes = await request(app)
+    .post('/api/rooms')
+    .send({ name: 'Auto Continue', chip_rate: 1, device_id: 'auto-host', game_mode: 'cash', sb_amount: 10, bb_amount: 20 });
+  expect(roomRes.status).toBe(201);
+  const roomId = roomRes.body.id;
+
+  await request(app).post(`/api/rooms/${roomId}/start`).send({ device_id: 'auto-host' });
+  const aliceRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Alice', nickname: 'Alice', initial_chips: 100, device_id: 'auto-alice' });
+  const bobRes = await request(app)
+    .post(`/api/rooms/${roomId}/players/join`)
+    .send({ name: 'Bob', nickname: 'Bob', initial_chips: 100, device_id: 'auto-bob' });
+  expect(aliceRes.status).toBe(201);
+  expect(bobRes.status).toBe(201);
+
+  const handRes = await request(app).post(`/api/rooms/${roomId}/hands`).send({ device_id: 'auto-host' });
+  expect(handRes.status).toBe(201);
+
+  const foldRes = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/actions`)
+    .send({ action: 'fold', device_id: 'auto-alice' });
+  expect(foldRes.status).toBe(200);
+  expect(foldRes.body.ended).toBe(true);
+  expect(foldRes.body.communityCards).toHaveLength(5);
+
+  const firstChoice = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/next-choice`)
+    .send({ device_id: 'auto-alice', choice: 'continue' });
+  expect(firstChoice.status).toBe(200);
+  expect(firstChoice.body.autoStarted).toBeUndefined();
+
+  const secondChoice = await request(app)
+    .post(`/api/rooms/${roomId}/hands/${handRes.body.handId}/next-choice`)
+    .send({ device_id: 'auto-bob', choice: 'continue' });
+  expect(secondChoice.status).toBe(200);
+  expect(secondChoice.body).toMatchObject({ allChosen: true, autoStarted: true });
+  expect(secondChoice.body.nextHand.handId).not.toBe(handRes.body.handId);
+
+  const roomAfter = await get('SELECT current_hand_id FROM rooms WHERE id=?', [roomId]);
+  expect(roomAfter.current_hand_id).toBe(secondChoice.body.nextHand.handId);
+  const nextPlayers = await new Promise((resolve, reject) => {
+    db.all('SELECT player_id FROM hand_players WHERE hand_id=? ORDER BY player_id', [secondChoice.body.nextHand.handId], (err, rows) => err ? reject(err) : resolve(rows));
   });
   expect(nextPlayers.map(p => p.player_id)).toEqual([aliceRes.body.id, bobRes.body.id]);
 });

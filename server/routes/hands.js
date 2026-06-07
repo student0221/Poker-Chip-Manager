@@ -226,11 +226,38 @@ router.post('/:handId/next-choice', (req, res) => {
   setNextChoice(req.params.roomId, req.params.handId, deviceId, req.body?.choice, (err, state) => {
     if (err) return res.status(400).json({ error: err.message });
     const allChosen = (state.players || []).every(p => !!p.next_choice);
-    emitRoomEvent(req.params.roomId, 'hand:next-choice', { handId: Number(req.params.handId), allChosen });
+    const allContinue = allChosen && (state.players || []).every(p => p.next_choice === 'continue');
     requireRoom(req, res, (room) => {
-      db.all('SELECT id, device_id FROM players WHERE room_id=? AND deleted_at IS NULL', [room.id], (pErr, players) => {
-        if (pErr) return res.status(500).json({ error: pErr.message });
-        res.json({ ...hideHoleCards(state, deviceId, room, players), allChosen });
+      const sendState = () => {
+        db.all('SELECT id, device_id FROM players WHERE room_id=? AND deleted_at IS NULL', [room.id], (pErr, players) => {
+          if (pErr) return res.status(500).json({ error: pErr.message });
+          emitRoomEvent(room.id, 'hand:next-choice', { handId: Number(req.params.handId), allChosen });
+          res.json({ ...hideHoleCards(state, deviceId, room, players), allChosen });
+        });
+      };
+
+      if (!allContinue) return sendState();
+
+      finishShowdownDisplay(room.id, req.params.handId, (finishErr, finishResult) => {
+        if (finishErr) return res.status(409).json({ error: finishErr.message });
+        if (!finishResult.canStartNextHand) {
+          emitRoomEvent(room.id, 'hand:showdown-finished', { handId: Number(req.params.handId), ...finishResult });
+          return res.json({ allChosen, autoStarted: false, finish: finishResult });
+        }
+
+        startHand(room.id, {
+          sb: room.sb_amount,
+          bb: room.bb_amount,
+          actionTimeoutSeconds: room.action_timeout_seconds
+        }, (startErr, startResult) => {
+          if (startErr) return res.status(400).json({ error: startErr.message, finish: finishResult });
+          getHandState(startResult.handId, (stateErr, nextState) => {
+            if (!stateErr) scheduleHandTimeout(room.id, nextState);
+            emitRoomEvent(room.id, 'hand:showdown-finished', { handId: Number(req.params.handId), ...finishResult });
+            emitRoomEvent(room.id, 'hand:started', { handId: startResult.handId, status: startResult.status, currentSeat: startResult.currentSeat });
+            res.json({ allChosen, autoStarted: true, finish: finishResult, nextHand: startResult });
+          });
+        });
       });
     });
   });
@@ -267,16 +294,19 @@ router.post('/:handId/advance', (req, res) => {
         // If only one player left, end immediately
         const active = state.players.filter(p => !p.is_folded);
         if (active.length <= 1) {
+          const deckCards = JSON.parse(hand.deck_snapshot || '[]');
+          const existingCards = JSON.parse(hand.community_cards || '[]');
+          const allCommunity = [...existingCards, ...deckCards.splice(0, Math.max(0, 5 - existingCards.length))];
           db.run(
-            'UPDATE hands SET status=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=? WHERE id=?',
-            ['completed', now, now + SHOWDOWN_DISPLAY_MS, hand.id],
+            'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=? WHERE id=?',
+            ['completed', 'river', JSON.stringify(allCommunity), JSON.stringify(deckCards), now, now + SHOWDOWN_DISPLAY_MS, hand.id],
             (endErr) => {
             if (endErr) return res.status(500).json({ error: endErr.message });
-            settleHand(hand.id, state.players, JSON.parse(hand.community_cards || '[]'), (settleErr, result) => {
+            settleHand(hand.id, state.players, allCommunity, (settleErr, result) => {
               if (settleErr) return res.status(500).json({ error: settleErr.message });
               clearHandTimeout(hand.id);
               emitRoomEvent(room.id, 'hand:ended', { handId: hand.id, result });
-              res.json({ ended: true, result });
+              res.json({ ended: true, communityCards: allCommunity, result });
             });
           });
           return;
@@ -287,16 +317,19 @@ router.post('/:handId/advance', (req, res) => {
         const roundIdx = ROUNDS.indexOf(hand.current_round);
         if (roundIdx >= ROUNDS.length - 1) {
           // Go to showdown
+          const deckCards = JSON.parse(hand.deck_snapshot || '[]');
+          const existingCards = JSON.parse(hand.community_cards || '[]');
+          const allCommunity = [...existingCards, ...deckCards.splice(0, Math.max(0, 5 - existingCards.length))];
           db.run(
-            'UPDATE hands SET status=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=? WHERE id=?',
-            ['showdown', now, now + SHOWDOWN_DISPLAY_MS, hand.id],
+            'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=? WHERE id=?',
+            ['showdown', 'river', JSON.stringify(allCommunity), JSON.stringify(deckCards), now, now + SHOWDOWN_DISPLAY_MS, hand.id],
             (sdErr) => {
             if (sdErr) return res.status(500).json({ error: sdErr.message });
-            settleHand(hand.id, state.players, JSON.parse(hand.community_cards || '[]'), (settleErr, result) => {
+            settleHand(hand.id, state.players, allCommunity, (settleErr, result) => {
               if (settleErr) return res.status(500).json({ error: settleErr.message });
               clearHandTimeout(hand.id);
               emitRoomEvent(room.id, 'hand:ended', { handId: hand.id, result });
-              res.json({ showdown: true, result });
+              res.json({ showdown: true, communityCards: allCommunity, result });
             });
           });
           return;

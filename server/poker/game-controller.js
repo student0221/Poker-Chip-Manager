@@ -13,6 +13,17 @@ function getRunoutCards(currentRound, deckCards) {
   return [];
 }
 
+function completeCommunityCards(hand) {
+  const deckCards = JSON.parse(hand.deck_snapshot || '[]');
+  const existingCards = JSON.parse(hand.community_cards || '[]');
+  const missingCount = Math.max(0, 5 - existingCards.length);
+  const runoutCards = deckCards.splice(0, missingCount);
+  return {
+    communityCards: [...existingCards, ...runoutCards],
+    deckCards
+  };
+}
+
 function getFirstActiveSeatAfterDealer(hand, handPlayers) {
   const activeSeats = handPlayers
     .filter(p => !p.is_folded && !p.is_all_in)
@@ -351,15 +362,16 @@ function processAction(handId, playerId, action, amount, callback) {
 
           // Check if hand should end (only 1 player left)
           if (activeHps.length <= 1) {
+            const { communityCards: allCommunity, deckCards } = completeCommunityCards(hand);
             // End hand immediately, last player wins
             db.run(
-              'UPDATE hands SET status=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=? WHERE id=?',
-              ['completed', now, getShowdownUntil(now), handId],
+              'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=? WHERE id=?',
+              ['completed', 'river', JSON.stringify(allCommunity), JSON.stringify(deckCards), now, getShowdownUntil(now), handId],
               (endErr) => {
               if (endErr) { db.run('ROLLBACK'); return callback(endErr); }
-              settleHand(handId, newHps, [], (settleErr, result) => {
+              settleHand(handId, newHps, allCommunity, (settleErr, result) => {
                 if (settleErr) return rollbackAndCallback(callback, settleErr);
-                commitAndCallback(callback, { action: 'fold', ended: true, winner: activeHps[0]?.player_id, result });
+                commitAndCallback(callback, { action: 'fold', ended: true, winner: activeHps[0]?.player_id, communityCards: allCommunity, result });
               });
             });
             return;
@@ -430,14 +442,15 @@ function processAction(handId, playerId, action, amount, callback) {
               );
             } else {
               // Showdown
+              const { communityCards: allCommunity, deckCards } = completeCommunityCards(hand);
               db.run(
-                'UPDATE hands SET status=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=?, total_pot=total_pot+? WHERE id=?',
-                ['showdown', now, getShowdownUntil(now), actualAmount, handId],
+                'UPDATE hands SET status=?, current_round=?, community_cards=?, deck_snapshot=?, current_seat=NULL, action_started_at=NULL, ended_at=?, showdown_until=?, total_pot=total_pot+? WHERE id=?',
+                ['showdown', 'river', JSON.stringify(allCommunity), JSON.stringify(deckCards), now, getShowdownUntil(now), actualAmount, handId],
                 (sdErr) => {
                 if (sdErr) return rollbackAndCallback(callback, sdErr);
-                settleHand(handId, newHps, JSON.parse(hand.community_cards || '[]'), (settleErr, result) => {
+                settleHand(handId, newHps, allCommunity, (settleErr, result) => {
                   if (settleErr) return rollbackAndCallback(callback, settleErr);
-                  commitAndCallback(callback, { action, showdown: true, result });
+                  commitAndCallback(callback, { action, showdown: true, communityCards: allCommunity, result });
                 });
               });
             }

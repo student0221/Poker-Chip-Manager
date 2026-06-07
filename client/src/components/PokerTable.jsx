@@ -49,8 +49,8 @@ function getSeatLayout(mySeat, totalSeats, isMobile, isFullRingMobile) {
   if (totalSeats <= 0) return [];
   const angleStep = 360 / totalSeats;
   const offsetDeg = 90 - mySeat * angleStep;
-  const rx = isFullRingMobile ? 39 : isMobile ? Math.min(36, 28 + totalSeats) : Math.min(46, 38 + totalSeats * 1.2);
-  const ry = isFullRingMobile ? 35 : isMobile ? Math.min(34, 26 + totalSeats) : Math.min(44, 36 + totalSeats);
+  const rx = isFullRingMobile ? 41 : isMobile ? Math.min(39, 30 + totalSeats) : Math.min(46, 38 + totalSeats * 1.2);
+  const ry = isFullRingMobile ? 38 : isMobile ? Math.min(37, 28 + totalSeats) : Math.min(44, 36 + totalSeats);
 
   return Array.from({ length: totalSeats }, (_, i) => {
     const angleDeg = offsetDeg + i * angleStep;
@@ -119,7 +119,7 @@ export default function PokerTable({
     () => getSeatLayout(mySeat, totalSeats, isMobile, isFullRingMobile),
     [mySeat, totalSeats, isMobile, isFullRingMobile]
   );
-  const centerTopClass = isMobile ? 'top-[50%]' : 'top-[44%]';
+  const centerTopClass = isMobile ? 'top-[45%]' : 'top-[44%]';
   const getPlayerAtSeat = (seat) => handPlayers?.find((p) => p.seat === seat);
   const handKey = hand?.id || 'none';
   const maxCurrentBet = Math.max(...(handPlayers?.map((p) => p.current_bet) || [0]));
@@ -167,7 +167,7 @@ export default function PokerTable({
     <>
       <div
         className={`relative mx-auto w-full ${isMobile ? 'max-w-[420px]' : 'max-w-4xl'}`}
-        style={isMobile ? { height: isFullRingMobile ? 'clamp(392px, 112vw, 468px)' : 'clamp(360px, 105vw, 440px)' } : { minHeight: '420px' }}
+        style={isMobile ? { height: isFullRingMobile ? 'clamp(420px, 118vw, 500px)' : 'clamp(390px, 112vw, 468px)' } : { minHeight: '420px' }}
       >
         <div
           className="absolute inset-[1%] rounded-[45%] shadow-2xl sm:inset-[2%]"
@@ -199,7 +199,7 @@ export default function PokerTable({
               <PotDisplay totalPot={totalPot} pots={pots || []} />
             </motion.div>
           </AnimatePresence>
-          <CommunityCards cards={communityCards} size={isMobile ? 'sm' : 'lg'} />
+          <CommunityCards cards={communityCards} size={isCrowdedMobile ? 'xs' : isMobile ? 'sm' : 'lg'} />
           {hand.current_round && (
             <div className="rounded-full bg-black/40 px-1.5 py-0.5 text-[9px] text-emerald-100/80 backdrop-blur-sm sm:px-3 sm:py-1 sm:text-xs">
               {ROUND_NAMES[hand.status] || ROUND_NAMES[hand.current_round] || hand.current_round}
