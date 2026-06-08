@@ -2,6 +2,54 @@
 
 局域网内的德州扑克筹码管理工具，支持单局兼容模式和多房间局域网对战模式。
 
+## 技术架构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                        client/                           │
+│  React 18 + Vite + Tailwind CSS                         │
+│  ├── pages/     RoomsPage · RoomPage · PlayerPage · AdminPage │
+│  ├── components/  PokerTable · Card · ActionPanel · ... │
+│  └── api.js     HTTP 客户端                              │
+├─────────────────────────────────────────────────────────┤
+│                        server/                           │
+│  Express + SQLite3 + Socket.io │
+│  ├── index.js        Express 入口                        │
+│  ├── socket.js       Socket.io 实时通信                  │
+│  ├── db.js           SQLite 封装（WAL + busy_timeout）   │
+│  ├── discovery.js    UDP 局域网房间发现                  │
+│  ├── room-cleanup.js 房间清理定时任务 │
+│  ├── routes/         REST API（rooms/players/hands/settle）│
+│  ├── services/        业务逻辑层 │
+│  └── poker/           德州扑克核心逻辑 │
+│       ├── game-controller.js   比赛状态机                 │
+│       ├── betting-engine.js    注池/结算算法              │
+│       ├── hand-evaluator.js    手牌强度评估               │
+│       ├── deck.js              牌堆生成                   │
+│       └── timeout-manager.js   超时管理                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 通信模式
+
+| 通道 | 用途 |
+|------|------|
+| HTTP REST | 权威写入入口（创建房间、加入、开始、结算等） |
+| Socket.io | 实时广播（玩家变化、补筹码、结算进度） |
+| Node UDP | 局域网房间自动发现 |
+
+### 数据模型
+
+```
+rooms ──1:N──► players
+  │              │
+  │              ├── nickname（同房间唯一）
+  │              ├── initial_chips / final_chips / net_profit
+  │              └── device_id（权限标识）
+
+settings（全局兼容，自动映射到 default 房间）
+```
+
 ## 使用
 
 ```bash
@@ -30,11 +78,11 @@ Windows 下也可以直接运行 `start.bat`。脚本会打开房间大厅，并
 
 1. 房主在 `/#/rooms` 创建房间，系统记录当前设备为房主。
 2. 房主进入房间页，分享邀请二维码或房间链接。
-3. 房主点击“开始比赛”。
+3. 房主点击"开始比赛"。
 4. 玩家用手机扫码进入房间页，填写昵称和入场筹码报名。
 5. 比赛中房主可给玩家补筹码，其他设备会通过 Socket.io 自动刷新。
-6. 房主点击“结束比赛”，玩家提交最终筹码。
-7. 房主点击“执行清算”，所有设备刷新看到最终排名。
+6. 房主点击"结束比赛"，玩家提交最终筹码。
+7. 房主点击"执行清算"，所有设备刷新看到最终排名。
 8. 房主可重置或解散房间。
 
 ## 兼容入口
@@ -77,4 +125,4 @@ npm run smoke:lan
 - Express + sqlite3
 - Socket.io 实时同步
 - Node UDP 广播/监听局域网房间发现
-- 响应式设计，支持手机浏览器
+- 响应式设计，支持手机浏览器（含移动端缩放/横屏/操作面板适配）
